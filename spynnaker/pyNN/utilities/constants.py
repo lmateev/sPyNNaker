@@ -58,4 +58,5 @@ POPULATION_BASED_REGIONS = Enum(
            ('SPIKE_HISTORY', 6),
            ('POTENTIAL_HISTORY', 7),
            ('GSYN_HISTORY', 8),
-           ('BUFFERING_OUT_STATE', 9)])
+           ('BUFFERING_OUT_STATE', 9),
+           ('PROFILING', 10)])
