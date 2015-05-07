@@ -1,5 +1,6 @@
-/*
- * in_spikes.c
+/*! \file
+ *
+ * \brief The implementation of a buffer for incoming spikes (in_spikes.c)
  *
  *
  *  SUMMARY
@@ -11,10 +12,10 @@
  *    intricate implementation will probably be required, involving the use
  *    of enable/disable interrupts.
  *
- *  AUTHOR
+ *  \author
  *    Dave Lester (david.r.lester@manchester.ac.uk)
  *
- *  COPYRIGHT
+ *  \copyright
  *    Copyright (c) Dave Lester and The University of Manchester, 2013.
  *    All rights reserved.
  *    SpiNNaker Project
@@ -23,10 +24,18 @@
  *    The University of Manchester
  *    Manchester M13 9PL, UK
  *
- *  DESCRIPTION
+ *  DETAILS
  *
+ *    The producer uses the variable input to add items to the buffer; the
+ *    consumer uses the variable output to remove items from the buffer.
  *
- *  CREATION DATE
+ *    In an event-based, or interrupt-driven system this allows us to perform
+ *    both adding and removing items without the need for interrupts to be disabled.
+ *
+ *    The price to be paid is that we might only be able to buffer 255 items in a 256
+ *    entry buffer.
+ *
+ *  \date
  *    10 December, 2013
  *
  *  HISTORY
@@ -42,111 +51,172 @@
  */
 
 #include "in_spikes.h"
-
 #include <debug.h>
 
 static spike_t* buffer;
 static uint32_t buffer_size;
 
-static index_t output;
-static index_t input;
+//! The consumer manipulates ouput, the producer manipulates "input".
+
+static index_t   output;
+static index_t   input;
 static counter_t overflows;
-static counter_t underflows;
 
-// unallocated
-//
-// Returns the number of buffer slots currently unallocated
-static inline counter_t unallocated() {
-    return ((input - output) % buffer_size);
+//! \brief Increments an index
+
+#define next(a) do {(a) = (((a)+1) == buffer_size)? 0: ((a)+1); } while (false)
+
+//! \brief Looks at the next item in the buffer.
+//! \return The index of the next item in the buffer to be output.
+
+static inline index_t peek_next (void)
+{   return ((output == 0)? buffer_size - 1: output - 1); }
+
+//! \brief Calculates the difference between input and output, returning a
+//! non-negative answer, which is less than the size of the buffer.
+//! \return The difference between input and output.
+
+static inline counter_t buffer_diff (void)
+{
+    register counter_t r = ((input > output)? 0: buffer_size) + input - output;
+
+    assert (r < buffer_size);
+
+    return (r);
 }
 
-// allocated
-//
-// Returns the number of buffer slots currently allocated
-static inline counter_t allocated() {
-    return ((output - input - 1) % buffer_size);
-}
+//! \brief Returns a number of unallocated slots in the buffer.
+//! There might actually be one more, if the consumer has not updated it's output pointer.
+//!
+//! \return A number of buffer slots currently unallocated.
 
-// The following two functions are used to determine whether a
-// buffer can have an element extracted/inserted respectively.
-static inline bool non_empty() {
-    return (allocated() > 0);
-}
+static inline counter_t unallocated (void)
+{   return (buffer_diff ()); }
 
-static inline bool non_full() {
-    return (unallocated() > 0);
-}
+//! \brief Returns a number of allocated slots in the buffer.
+//! There might actually be one fewer, if the producer has not updated it's input pointer.
+//!
+//! \return A number of buffer slots currently allocated.
 
-bool in_spikes_initialize_spike_buffer(uint32_t size) {
-    buffer = (spike_t *) sark_alloc(1, size * sizeof(spike_t));
+static inline counter_t allocated (void)
+{   return (buffer_size - buffer_diff () - 1); }
+
+//! \brief A non_empty buffer can have an item extracted by the consumer.
+//! \return A bool indicating that an extraction operation may be performed
+//! by the consumer.
+
+static inline bool non_empty (void)
+{   return (allocated () > 0); }
+
+//! \brief A non_full buffer can have an item entered by the producer.
+//! \return A bool indicating that an item may be entered into the buffer
+//! by the producer.
+
+static inline bool non_full (void)
+{   return (unallocated () > 0); }
+
+//! \brief Initialize the incoming spike buffer.
+//! \param[in] size The maximum number of items in the spike buffer.
+//! \return Whether the allocation of the buffer took place successfully.
+
+bool in_spikes_initialize_spike_buffer (uint32_t size)
+{
+    assert (size > 0);
+
+    buffer = (spike_t*) sark_alloc(1, size * sizeof (spike_t));
+
+    check_dtcm (buffer);
     if (buffer == NULL) {
-        log_error("Cannot allocate in spikes buffer");
-        return false;
+        log_error ("Cannot allocate in spikes buffer");
+        return (false);
     }
+
     buffer_size = size;
-    input = size - 1;
-    output = 0;
-    overflows = 0;
-    underflows = 0;
-    return true;
+    input       = size - 1;
+    output      = 0;
+    overflows   = 0;
+    underflows  = 0;
+
+    return (true);
 }
 
-uint32_t in_spikes_n_spikes_in_buffer() {
-    return allocated();
-}
+//! \brief A synonym for "allocated"
+//! \return A number of used items.
 
-#define peek_next(a) ((a - 1) % buffer_size)
+uint32_t in_spikes_n_spikes_in_buffer (void)
+{   return (allocated ()); }
 
-#define next(a) do {(a) = peek_next(a);} while (false)
+//! \brief Adds a spike to the buffer if this is possible.
+//! \param[in] spike The incoming spike to be placed in the buffer.
+//! \return Returns true if the spike is successfully placed into the buffer,
+//! otherwise false.
 
-bool in_spikes_add_spike(spike_t spike) {
-    bool success = non_full();
+bool in_spikes_add_spike (spike_t spike)
+{
+    bool success = non_full ();
 
     if (success) {
-        buffer[input] = spike;
-        next(input);
+        buffer [input] = spike;
+        next (input);
     } else
         overflows++;
 
     return (success);
 }
 
-bool in_spikes_get_next_spike(spike_t* spike) {
-    bool success = non_empty();
+//! \brief Gets a spike from the buffer; this is always possible.
+//! \param[out] spike The address into which the spike is be written.
+//! \return Returns true if the spike is extracted from the buffer,
+//! otherwise false.
 
-    if (success) {
-        next(output);
-        *spike = buffer[output];
-    } else
-        underflows++;
+bool in_spikes_get_next_spike (spike_t* spike)
+{
+    bool success = non_empty ();
+
+    assert (success); // A failure here indicates that we're extracting from an empty buffer.
+
+    next (output);
+    *spike = buffer [output];
 
     return (success);
 }
 
-bool in_spikes_is_next_spike_equal(spike_t spike) {
-    if (non_empty()) {
-        uint32_t peek_output = peek_next(output);
-        if (buffer[peek_output] == spike) {
-            output = peek_output;
-            return true;
-        }
-    }
-    return false;
+//! \brief Gets a spike from the buffer, checking whether it matches the current one.
+//! If it does, then the buffer is advanced without a DMA occuring.
+//! \param[in] spike The spike address to be matched.
+//! \return Returns true if the spike in the buffer matches the previous one,
+//! otherwise false.
+
+bool in_spikes_is_next_spike_equal (spike_t spike)
+{
+    bool success = non_empty ();
+
+    assert (success); // A failure here indicates that we're extracting from an empty buffer.
+
+    index_t peek_output = peek_next ();
+
+    success = buffer [peek_output] == spike;
+
+    if (success)
+        output = peek_output;
+
+    return (success);
 }
 
-// The following two functions are used to access the locally declared
-// variables.
-counter_t in_spikes_get_n_buffer_overflows() {
-    return (overflows);
-}
+//! \brief Provides access to the overflow counter.
+//! \return The number of overflows that have occurred.
 
-counter_t in_spikes_get_n_buffer_underflows() {
-    return (underflows);
-}
+counter_t in_spikes_get_n_buffer_overflows (void)
+{   return (overflows); }
+
 
 #if LOG_LEVEL >= LOG_DEBUG
-void in_spikes_print_buffer() {
-    counter_t n = allocated();
+
+//! \brief A printer for the incoming spike buffer.
+
+void in_spikes_print_buffer (void)
+{
+    counter_t n = allocated ();
     index_t a;
 
     log_debug("buffer: input = %3u, output = %3u elements = %3u\n", input,
@@ -161,7 +231,9 @@ void in_spikes_print_buffer() {
     log_debug("------------------------------------------------\n");
 }
 #else // DEBUG
-void in_spikes_print_buffer() {
-    skip();
-}
+
+//! \brief A printer for the incoming spike buffer.
+
+void in_spikes_print_buffer (void)
+{   skip (); }
 #endif // DEBUG
