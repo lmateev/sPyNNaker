@@ -191,14 +191,13 @@ bool in_spikes_is_next_spike_equal (spike_t spike)
 {
     bool success = non_empty ();
 
-    assert (success); // A failure here indicates that we're extracting from an empty buffer.
+    if (success) {
+        index_t peek_output = peek_next ();
+        success = buffer [peek_output] == spike;
 
-    index_t peek_output = peek_next ();
-
-    success = buffer [peek_output] == spike;
-
-    if (success)
-        output = peek_output;
+        if (success)
+            output = peek_output;
+    }
 
     return (success);
 }
