@@ -62,7 +62,7 @@ static index_t   output;
 static index_t   input;
 static counter_t overflows;
 
-//! \brief Increments an index
+//! \brief Increments an index modulo buffer size
 
 #define next(a) do {(a) = (((a)+1) == buffer_size)? 0: ((a)+1); } while (false)
 
@@ -78,7 +78,9 @@ static inline index_t peek_next (void)
 
 static inline counter_t buffer_diff (void)
 {
-    register counter_t r = ((input > output)? 0: buffer_size) + input - output;
+    register counter_t r = (input >= output)? 0: buffer_size;
+
+    r += input - output;
 
     assert (r < buffer_size);
 
@@ -184,7 +186,7 @@ bool in_spikes_get_next_spike (spike_t* spike)
 //! \brief Gets a spike from the buffer, checking whether it matches the current one.
 //! If it does, then the buffer is advanced without a DMA occuring.
 //! \param[in] spike The spike address to be matched.
-//! \return Returns true if the spike in the buffer matches the previous one,
+//! \return Returns true if there is a spike in the buffer and it matches the previous one,
 //! otherwise false.
 
 bool in_spikes_is_next_spike_equal (spike_t spike)
@@ -193,7 +195,7 @@ bool in_spikes_is_next_spike_equal (spike_t spike)
 
     if (success) {
         index_t peek_output = peek_next ();
-        success = buffer [peek_output] == spike;
+        success = (buffer [peek_output] == spike);
 
         if (success)
             output = peek_output;
