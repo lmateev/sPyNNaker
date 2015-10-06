@@ -173,9 +173,9 @@ class AbstractSynapticManager(AbstractProvidesIncomingEdgeConstraints):
         # Go through the subedges and add up the memory
         for subedge in subvertex_in_edges:
 
-            # pad the memory size to meet 1 k offsets
-            if (memory_size & 0x3FF) != 0:
-                memory_size = (memory_size & 0xFFFFFC00) + 0x400
+            # Pad memory allocation depending on the master population table
+            memory_size = self._master_pop_table_generator\
+                .get_next_allowed_address(memory_size)
 
             sublist = subedge.get_synapse_sublist(graph_mapper)
             max_n_words = \
@@ -184,7 +184,7 @@ class AbstractSynapticManager(AbstractProvidesIncomingEdgeConstraints):
                     for synapse_row in sublist.get_rows()])
 
             all_syn_block_sz = \
-                self._calculate_all_synaptic_block_size(sublist,
+                self._calculate_all_synaptic_block_size(sublist.get_n_rows(),
                                                         max_n_words)
             memory_size += all_syn_block_sz
         return memory_size
@@ -204,42 +204,32 @@ class AbstractSynapticManager(AbstractProvidesIncomingEdgeConstraints):
 
                 # Get maximum row length in this edge
                 max_n_words = in_edge.get_max_n_words(vertex_slice)
-                all_syn_block_sz = \
-                    self._calculate_all_synaptic_block_size(in_edge,
-                                                            max_n_words)
 
-                # TODO: Fix this to be more accurate!
-                # May require modification to the master pynn_population.py
-                # table
+                # Get an estimate of the number of sub-vertices - clearly
+                # this will not be correct if the SDRAM usage is high!
                 n_atoms = sys.maxint
                 edge_pre_vertex = in_edge.pre_vertex
                 if isinstance(edge_pre_vertex, AbstractPartitionableVertex):
                     n_atoms = in_edge.pre_vertex.get_max_atoms_per_core()
                 if in_edge.pre_vertex.n_atoms < n_atoms:
                     n_atoms = in_edge.pre_vertex.n_atoms
+                n_sub_vertices = float(in_edge.get_n_rows()) / float(n_atoms)
+                atoms_per_subvertex = int(math.ceil(
+                    edge_pre_vertex.n_atoms / n_sub_vertices))
 
-                num_rows = in_edge.get_n_rows()
-                extra_mem = math.ceil(float(num_rows) / float(n_atoms)) * 1024
-                if extra_mem == 0:
-                    extra_mem = 1024
-                all_syn_block_sz += extra_mem
-                memory_size += all_syn_block_sz
+                for _ in range(int(math.ceil(n_sub_vertices))):
+                    memory_size = self._master_pop_table_generator\
+                        .get_next_allowed_address(memory_size)
+                    memory_size += self._calculate_all_synaptic_block_size(
+                        atoms_per_subvertex, max_n_words)
 
         return memory_size
 
-    def _calculate_all_synaptic_block_size(self, synaptic_sub_list,
-                                           max_n_words):
-        """
-
-        :param synaptic_sub_list:
-        :param max_n_words:
-        :return:
-        """
+    def _calculate_all_synaptic_block_size(self, num_rows, max_n_words):
         # Gets smallest possible (i.e. supported by row length
         # Table structure) that can contain max_row_length
         row_length = self._master_pop_table_generator.get_allowed_row_length(
             max_n_words)
-        num_rows = synaptic_sub_list.get_n_rows()
         syn_block_sz = \
             4 * (constants.SYNAPTIC_ROW_HEADER_WORDS + row_length)
         return syn_block_sz * num_rows
@@ -792,8 +782,8 @@ class AbstractSynapticManager(AbstractProvidesIncomingEdgeConstraints):
                 post_x, post_y, synapse_region_base_address_location, 4,
                 "<I", transceiver)
 
-            # the base address of the synaptic block in absolute terms is the app
-            # base, plus the synaptic matrix base plus the offset
+            # the base address of the synaptic block in absolute terms is the
+            # app base, plus the synaptic matrix base plus the offset
             synaptic_block_base_address = (app_data_base_address +
                                            synapse_region_base_address +
                                            synaptic_block_base_address_offset)
