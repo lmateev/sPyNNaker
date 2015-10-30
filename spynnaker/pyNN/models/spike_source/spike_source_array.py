@@ -3,8 +3,7 @@ SpikeSourceArray
 """
 
 # spynnaker imports
-from spinn_front_end_common.abstract_models.\
-    abstract_outgoing_edge_same_contiguous_keys_restrictor import \
+from spinn_front_end_common.utility_models.outgoing_edge_same_contiguous_keys_restrictor import \
     OutgoingEdgeSameContiguousKeysRestrictor
 from spinn_front_end_common.abstract_models.\
     abstract_provides_outgoing_edge_constraints import \
@@ -351,12 +350,16 @@ class SpikeSourceArray(
         self._write_setup_info(
             spec, spike_buffer.buffer_size, ip_tags, recording_size)
 
+        subvertex.set_routing_infos(routing_info)
+
         # End-of-Spec:
         spec.end_specification()
         data_writer.close()
 
         # tell the subvertex its region size
         subvertex.region_size = recording_size
+
+        return [data_writer.filename]
 
     def get_binary_file_name(self):
         """
@@ -413,8 +416,8 @@ class SpikeSourceArray(
         :param graph_mapper: the graph mapper object
         :return: list of constraints
         """
-        return self._outgoing_edge_key_restrictor.get_outgoing_edge_constraints(
-            partitioned_edge, graph_mapper)
+        return self._outgoing_edge_key_restrictor.\
+            get_outgoing_edge_constraints()
 
 
     def is_data_specable(self):

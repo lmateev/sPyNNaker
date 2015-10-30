@@ -15,8 +15,7 @@ from spynnaker.pyNN.models.common.abstract_gsyn_recordable \
 from spynnaker.pyNN.models.common.abstract_v_recordable \
     import AbstractVRecordable
 
-
-from spinn_front_end_common.utilities.timer import Timer
+from pacman.utilities.utility_objs.timer import Timer
 from spinn_front_end_common.utilities import exceptions
 
 from pyNN.space import Space
