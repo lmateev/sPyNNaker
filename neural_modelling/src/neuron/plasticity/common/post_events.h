@@ -8,6 +8,9 @@
 // Include debug header for log_info etc
 #include <debug.h>
 
+// Garbage collection include
+#include "spinn_gc.h"
+
 //---------------------------------------
 // Macros
 //---------------------------------------
@@ -34,17 +37,27 @@ typedef struct {
 //---------------------------------------
 // Inline functions
 //---------------------------------------
-static inline post_event_history_t *post_events_init_buffers(
-        uint32_t n_neurons) {
+static inline post_event_history_t *post_events_init_buffers(uint32_t n_neurons, vector_t *post_event_indices) {
     post_event_history_t *post_event_history =
         (post_event_history_t*) spin1_malloc(
             n_neurons * sizeof(post_event_history_t));
+
+    // Allocate extra space for history traces in case we will overflow
+    // maximum number of traces.
+    // **NOTE**: For now giving 2 extra traces for each neuron but this needs
+    // to be calculated accurately for later.
+    spin1_malloc(n_neurons * 2 * (sizeof(uint32_t) + sizeof(post_event_history_t)));
+
+    // Allocate space for the vector of indices
+    post_event_indices -> object_indices = spin1_malloc(n_neurons * sizeof(uint32_t));
 
     // Check allocations succeeded
     if (post_event_history == NULL) {
         log_error("Unable to allocate global STDP structures - Out of DTCM");
         return NULL;
     }
+
+    uint32_t current_index = 0;
 
     // Loop through neurons
     for (uint32_t n = 0; n < n_neurons; n++) {
@@ -53,11 +66,19 @@ static inline post_event_history_t *post_events_init_buffers(
         post_event_history[n].times[0] = 0;
         post_event_history[n].traces[0] = timing_get_initial_post_trace();
         post_event_history[n].count_minus_one = 0;
+
+        // Add initial index of a history trace
+        (post_event_indices -> object_indices)[n] = current_index;
+        current_index += sizeof(post_event_history_t);
+
+        // Add initial size of the history trace buffer of this neuron.
+        (post_event_indices -> object_sizes)[n] = sizeof(post_event_history_t);
     }
 
     return post_event_history;
 }
 
+//---------------------------------------
 static inline post_event_window_t post_events_get_window(
         const post_event_history_t *events, uint32_t begin_time) {
 
