@@ -14,6 +14,12 @@ from spinn_front_end_common.utilities import helpful_functions
 from spinn_front_end_common.interface.executable_finder import ExecutableFinder
 
 # local front end imports
+from spynnaker.pyNN.models.common.abstract_gsyn_recordable import \
+    AbstractGSynRecordable
+from spynnaker.pyNN.models.common.abstract_spike_recordable import \
+    AbstractSpikeRecordable
+from spynnaker.pyNN.models.common.abstract_v_recordable import \
+    AbstractVRecordable
 from spynnaker.pyNN.models.pynn_population import Population
 from spynnaker.pyNN.models.pynn_projection import Projection
 from spynnaker.pyNN import overridden_pacman_functions
@@ -247,6 +253,18 @@ class Spinnaker(object):
         """
         logger.info("Starting execution process")
 
+        if run_time is None:
+            for vertex in self._partitionable_graph.vertices:
+                if ((isinstance(vertex, AbstractSpikeRecordable) and
+                        vertex.is_recording_spikes()) or
+                        (isinstance(vertex, AbstractVRecordable) and
+                            vertex.is_recording_v()) or
+                        (isinstance(vertex, AbstractGSynRecordable) and
+                            vertex.is_recording_gsyn)):
+                    raise common_exceptions.ConfigurationException(
+                        "recording a population when set to infinite runtime "
+                        "is not currently supported")
+
         if self._original_first_run is None:
             self._original_first_run = run_time
         if self._has_reset_last and self._original_first_run != run_time:
@@ -461,8 +479,9 @@ class Spinnaker(object):
         algorithms = list()
         optional_algorithms = list()
 
-        # needed for multi-run/SSA's to work correctly.
-        algorithms.append("SpyNNakerRuntimeUpdator")
+        if not using_auto_pause_and_resume:
+            # needed for multi-run/SSA's to work correctly.
+            algorithms.append("SpyNNakerRuntimeUpdator")
 
         # if youve not ran before, add the buffer manager
         using_virtual_board = config.getboolean("Machine", "virtual_board")
@@ -525,11 +544,9 @@ class Spinnaker(object):
                     algorithms.append("FrontEndCommonApplicationRunner")
                     optional_algorithms.append(
                         "FrontEndCommonApplicationDataLoader")
-                    algorithms.append("FrontEndCommonPartitionableGraphHost"
-                                      "ExecuteDataSpecification")
+                    algorithms.append("FrontEndCommonPartitionableGraphHostExecuteDataSpecification")
                     algorithms.append("FrontEndCommonLoadExecutableImages")
-                    algorithms.append("FrontEndCommomPartitionableGraphData"
-                                      "SpecificationWriter")
+                    algorithms.append("FrontEndCommomPartitionableGraphDataSpecificationWriter")
                 else:
                     algorithms.append("FrontEndCommonAutoPauseAndResumer")
 
@@ -663,7 +680,7 @@ class Spinnaker(object):
         # if using auto_pause and resume, add basic pause and resume inputs
         if using_auto_pause_and_resume:
             inputs = self._add_auto_pause_and_resume_inputs(
-                inputs, application_graph_changed, is_resetting)
+                inputs, application_graph_changed, is_resetting, this_run_time)
 
         # FrontEndCommonApplicationDataLoader after a reset and no changes
         if not self._has_ran and not application_graph_changed:
@@ -978,7 +995,7 @@ class Spinnaker(object):
             'type': "RunTime",
             'value': this_run_time})
         inputs.append({
-            'type': "CurrentRunMS",
+            'type': "TotalCommunitiveRunTime",
             'value': self._current_run_ms})
         inputs.append({
             'type': "UseAutoPauseAndResume",
@@ -1024,7 +1041,8 @@ class Spinnaker(object):
         return inputs
 
     def _add_auto_pause_and_resume_inputs(
-            self, inputs, application_graph_changed, is_resetting):
+            self, inputs, application_graph_changed, is_resetting,
+            this_run_time):
         # due to the mismatch between dsg's and dse's in different front
         # end, the inputs not given to the multile pause and resume but
         # which are needed for dsg/dse need to be put in the extra inputs
@@ -1035,7 +1053,53 @@ class Spinnaker(object):
         extra_xmls = list()
         extra_xmls.append(spynnaker_xml_file)
 
+        # handle inputs and algorithms for the different parts of run
+        algorithms_to_run_before = list()
+        algorithms_to_run_between = list()
+        optional_algorithms_to_run = list()
         extra_inputs = list()
+
+        # add before algorithms
+        algorithms_to_run_before.append("SpyNNakerRuntimeUpdator")
+        optional_algorithms_to_run.append("FrontEndCommonApplicationDataLoader")
+
+        if application_graph_changed and not self._has_ran:
+            algorithms_to_run_before.append(
+                "FrontEndCommomPartitionableGraphDataSpecificationWriter")
+            algorithms_to_run_before.append(
+                "FrontEndCommonPartitionableGraphHostExecuteDataSpecification")
+            algorithms_to_run_before.append(
+                "FrontEndCommonLoadExecutableImages")
+
+        # add between algorithms
+        algorithms_to_run_between.append("FrontEndCommonApplicationRunner")
+        algorithms_to_run_between.append("SpyNNakerRuntimeUpdator")
+        algorithms_to_run_between.append("SpyNNakerRecordingExtractor")
+
+        # standard inputs
+        inputs.append({
+            'type': "AlgorithmsBeforeRuns",
+            'value': algorithms_to_run_before})
+        inputs.append({
+            'type': "AlgorithmsBetweenRuns",
+            'value': algorithms_to_run_between})
+        inputs.append({
+            'type': "OptionalAlgorithmsToRun",
+            'value': optional_algorithms_to_run})
+        inputs.append({
+            'type': "Steps",
+            'value': self._steps})
+        inputs.append({
+            'type': "ExtraInputs",
+            'value': extra_inputs})
+        inputs.append({
+            'type': "ExtraXMLS",
+            'value': extra_xmls})
+        inputs.append({
+            'type': "RunTime",
+            'value': this_run_time})
+
+        # standard extra inputs
         extra_inputs.append({
             'type': 'ExecutableFinder',
             'value': executable_finder})
@@ -1052,54 +1116,26 @@ class Spinnaker(object):
             'type': 'ApplicationDataFolder',
             'value': self._app_data_runtime_folder})
         extra_inputs.append({
-            'type': "CurrentRunMS",
-            'value': self._current_run_ms})
-        extra_inputs.append({
             'type': "MachineTimeStep",
             'value': self._machine_time_step})
         extra_inputs.append({
             'type': "TotalCommunitiveRunTime",
             'value': self._current_run_ms})
-
-        # standard inputs
-        inputs.append({
-            'type': "ExtraAlgorithms",
-            'value': ["SpyNNakerRecordingExtractor",
-                      "SpyNNakerRuntimeUpdatorAfterRun"]})
-        inputs.append({
-            'type': "ExtraInputs",
-            'value': extra_inputs})
-        inputs.append({
-            'type': "ExtraXMLS",
-            'value': extra_xmls})
-        inputs.append({
-            'type': "DSGeneratorAlgorithm",
-            'value': "FrontEndCommomPartitionableGraphDataSpecificationWriter"})
-        inputs.append({
-            'type': "DSExecutorAlgorithm",
-            'value':
-                "FrontEndCommonPartitionableGraphHostExecuteDataSpecification"})
-        inputs.append({
+        extra_inputs.append({
             'type': "HasRanBefore",
             'value': self._has_ran})
-        inputs.append({
+        extra_inputs.append({
             'type': "ApplicationGraphChanged",
             'value': application_graph_changed})
-        inputs.append({
+        extra_inputs.append({
             'type': "HasResetBefore",
             'value': self._has_reset_last})
-        inputs.append({
-            'type': "Steps",
-            'value': self._steps})
 
         # add extra needed by auto_pause and resume if reset has occurred
-        if not application_graph_changed and not is_resetting:
+        if not application_graph_changed and not self._has_ran:
             inputs.append({
                 'type': "MemoryRoutingInfos",
                 'value': self._routing_infos})
-            inputs.append({
-                'type': "MemoryPartitionedGraph",
-                'value': self._partitioned_graph})
             inputs.append({
                 'type': "MemoryTags",
                 'value': self._tags})
