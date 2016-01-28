@@ -8,7 +8,10 @@
 //
 //------------------------------------------------------------------------------
 
-#include "./post_events.h"
+#ifndef SPINN_GC
+#define SPINN_GC
+
+#include <stdint.h>
 
 /*!
 
@@ -85,8 +88,21 @@ appear in a compacted block.
 Returns a pointer to a new vector_t.
 
 */
-uint copy_live_objects_to_sdram(void *traces, vector_t *live_objects, int *dest);
+uint copy_live_objects_to_sdram(int *traces, vector_t *live_objects, int *dest,
+                                int n_neurons);
 
+
+/*
+
+Move a buffer of history traces to the end of the strucutre
+of history trace buffers. Update the index and size of the
+relocated buffer.
+
+*/
+void extend_hist_trace_buffer(int *traces, vector_t *live_objects,
+                              int move_neuron_index,
+                              int *post_event_history,
+                              int extend_by);
 
 /*
 
@@ -96,3 +112,5 @@ Copy block of memory from SDRAM to a given data structure.
 void dma_compact_live_objects(int *src, int *dest, int size);
 
 //------------------------------------------------------------------------------
+
+#endif

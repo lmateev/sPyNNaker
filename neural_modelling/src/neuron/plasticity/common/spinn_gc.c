@@ -14,7 +14,7 @@
 #include "spin1_api.h"
 #include <debug.h>
 
-#include "./post_events.h"
+#include "./spinn_gc.h"
 
 //------------------------------------------------------------------------------
 // Various debugging routines mainly to print out memory contents or
@@ -106,7 +106,7 @@ uint sizeof_dtcm_block(block_t * pointer) {
 /*
 
 Using ARM Block Copy instructions, LDM/STM, copy given memory block
-16 bytes at a time.
+16 bytes per instruction.
 
 If specified block size is not a multiple of 16 the remaining
 number of bytes at the end are copied single byte at once.
@@ -123,28 +123,28 @@ uint sark_block_copy(void *dest, const void *src, uint n) {
     "      LDR    r1, %[to]      \n\t"
     "      MOV    r2, %[size]    \n\t"
 
-    "blockcopy:                  \n\t"
+    "blockcopy%=:                \n\t"
     "      MOVS   r3, r2, LSR #4 \n\t"
     "      BEQ    copybytes      \n\t"
     "      PUSH   {r4-r7}        \n\t"
 
-    "quadcopy:                   \n\t"
+    "quadcopy%=:                 \n\t"
     "      LDM    r0!, {r4-r7}   \n\t"
     "      STM    r1!, {r4-r7}   \n\t"
     "      SUBS   r3, #1         \n\t"
     "      BNE    quadcopy       \n\t"
     "      POP    {r4-r7}        \n\t"
 
-    "copybytes:                  \n\t"
+    "copybytes%=:                \n\t"
     "      ANDS   r2, r2, #15    \n\t"
     "      BEQ    stop           \n\t"
-    "bytecopy:                   \n\t"
+    "bytecopy%=:                 \n\t"
     "      LDRB   r3, [r0], #1   \n\t"
     "      STRB   r3, [r1], #1   \n\t"
     "      SUBS   r2, r2, #1     \n\t"
     "      BNE    bytecopy       \n\t"
 
-    "stop:                       \n\t"
+    "stop%=:                     \n\t"
     "      POP    {r0-r3}        \n\t"
     :: [to] "m" (dest),      /* Address to copy block to */
        [from] "m" (src),     /* Address where block resides */
@@ -164,7 +164,8 @@ appear in a compacted block.
 Returns a pointer to a new vector_t.
 
 */
-uint copy_live_objects_to_sdram(void *traces, vector_t *live_objects, void *dest) {
+uint copy_live_objects_to_sdram(int *traces, vector_t *live_objects, int *dest,
+                                int n_neurons) {
 
   int i;
   int address_in_sdram = *dest;
@@ -173,10 +174,10 @@ uint copy_live_objects_to_sdram(void *traces, vector_t *live_objects, void *dest
   // interchanged with the given live_objects.
   vector_t *live_objects_changed =          spin1_malloc(sizeof(vector_t));
   live_objects_changed -> object_indices =  spin1_malloc(n_neurons * sizeof(uint32_t));
-  live_objects_changed -> objects_sizes =   spin1_malloc(n_neurons * sizeof(uint32_t));
+  live_objects_changed -> object_sizes =    spin1_malloc(n_neurons * sizeof(uint32_t));
 
   for (i = 0; i < sizeof(live_objects -> object_indices); i++) {
-    // Copy only those neuron traces that have an entry in the vector
+    // Copy only those neuron trace buffers that have an entry in the vector
     // of live objects.
     if ((live_objects -> object_indices)[i] >= 0) {
       sark_block_copy(address_in_sdram,
@@ -184,13 +185,49 @@ uint copy_live_objects_to_sdram(void *traces, vector_t *live_objects, void *dest
                       (live_objects -> object_sizes)[i]);
 
       (live_objects_changed -> object_indices)[i] =
-        (int) - address_in_sdram;
+        (int) address_in_sdram;
       address_in_sdram += (live_objects -> object_sizes)[i];
 
     }
   }
 
   return live_objects_changed;
+}
+
+/*
+
+Move a buffer of history traces to the end of the strucutre
+of history trace buffers. Update the index and size of the
+relocated buffer.
+
+*/
+void extend_hist_trace_buffer(int *traces, vector_t *live_objects,
+                              int move_neuron_index,
+                              int *post_event_history,
+                              int extend_by) {
+
+  // Get address next to the end of history trace structure.
+  int last_buffer = 0;
+  for (int i = 1; i < sizeof(live_objects -> object_indices); i++) {
+    if ((live_objects -> object_indices)[i]
+        > (live_objects -> object_indices)[last_buffer])
+      last_buffer = i;
+  }
+
+  int *end_of_buffer_structure = (live_objects -> object_indices)[last_buffer]
+                                  + post_event_history
+                                  + (live_objects -> object_sizes)[last_buffer];
+
+  // Copy the specified buffer to the end
+  sark_block_copy(end_of_buffer_structure,
+                  (live_objects -> object_indices)[move_neuron_index]
+                  + post_event_history,
+                  (live_objects -> object_sizes)[move_neuron_index]);
+
+  // Update entry in the vector of live objects and the buffer's size.
+  (live_objects -> object_indices)[move_neuron_index] = end_of_buffer_structure;
+  (live_objects -> object_sizes)[move_neuron_index] +=
+      extend_by;
 }
 
 
@@ -200,7 +237,6 @@ Copy block of memory from SDRAM to a given data structure.
 
 */
 void dma_compact_live_objects(int *src, int *dest, int size) {
-    int i;
 
     log_info("DMA fired off.");
 
@@ -209,12 +245,6 @@ void dma_compact_live_objects(int *src, int *dest, int size) {
                        *dest,
                        DMA_READ,
                        size);
-}
-
-
-//------------------------------------------------------------------------------
-
-void c_main() {
 }
 
 //------------------------------------------------------------------------------
