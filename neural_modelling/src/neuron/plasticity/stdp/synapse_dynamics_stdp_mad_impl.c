@@ -61,7 +61,8 @@ typedef struct {
 } pre_event_history_t;
 
 post_event_history_t *post_event_history;
-vector_t             *post_event_indices;
+vector_t             *post_event_vec;        // Store indices of post_event buffs.
+vector_t             *post_event_shadow_vec; // Duplicate of above, working space.
 
 //---------------------------------------
 // Synapse update loop
@@ -202,10 +203,8 @@ bool synapse_dynamics_initialise(
         return false;
     }
 
-    // Initialize vector of live objects
-    post_event_indices = spin1_malloc(sizeof(vector_t));
-
-    post_event_history = post_events_init_buffers(n_neurons, post_event_indices);
+    post_event_history = post_events_init_buffers(n_neurons, &post_event_vec,
+                                                  &post_event_shadow_vec);
     if (post_event_history == NULL) {
         return false;
     }
@@ -268,7 +267,7 @@ bool synapse_dynamics_process_plastic_synapses(
             time, last_pre_time, last_pre_trace, event_history->prev_trace,
             delay_dendritic, delay_axonal, current_state,
             (post_event_history_t *)((int)post_event_history
-              + (post_event_indices->object_indices)[index]));
+              + (post_event_vec->object_indices)[index]));
 
         // Convert into ring buffer offset
         uint32_t ring_buffer_index = synapses_get_ring_buffer_index_combined(
@@ -293,18 +292,18 @@ void synapse_dynamics_process_post_synaptic_event(
 
     // Add post-event
     post_event_history_t *history = (post_event_history_t *)((int)post_event_history
-                                      + (post_event_indices->object_indices)[neuron_index]);
+                                      + (post_event_vec->object_indices)[neuron_index]);
     const uint32_t last_post_time = history->times[history->count_minus_one];
     const post_trace_t last_post_trace =
         history->traces[history->count_minus_one];
 
     // Extend buffer if it is full
     if (history->count_minus_one >= (MAX_POST_SYNAPTIC_EVENTS - 1)) {
-        history = (post_trace_t *) extend_hist_trace_buffer(post_event_indices,
+        history = (post_trace_t *) extend_hist_trace_buffer(post_event_vec,
                                            neuron_index,
                                            sizeof(post_trace_t) + sizeof(uint32_t));
     }
- 
+
     post_events_add(time, history, timing_add_post_spike(time, last_post_time,
                                                          last_post_trace));
 }

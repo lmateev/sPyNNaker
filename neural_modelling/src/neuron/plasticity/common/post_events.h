@@ -38,17 +38,17 @@ typedef struct {
 // Inline functions
 //---------------------------------------
 static inline post_event_history_t *post_events_init_buffers(
-        uint32_t n_neurons, vector_t *post_event_indices) {
+        uint32_t n_neurons, vector_t **post_event_vec,
+        vector_t **post_event_shadow_vec) {
 
     post_event_history_t *post_event_history =
         (post_event_history_t*) spin1_malloc(
             n_neurons * sizeof(post_event_history_t));
 
-    // Allocate extra space for history traces in case we will overflow
-    // maximum number of traces.
-    // **NOTE**: For now giving 2 extra traces for each neuron but this needs
-    // to be calculated accurately later on.
-    spin1_malloc(n_neurons * 2 * (sizeof(uint32_t) + sizeof(post_trace_t)));
+    // Allocate extra space for buffer extender.
+    // **NOTE: For now giving 2 extra traces for each neuron but this needs
+    // to be calculated properly when the rate of compaction will be known.
+    spin1_malloc (n_neurons * 2 * (sizeof(uint32_t) + sizeof(post_trace_t)));
 
     // Check allocations succeeded
     if (post_event_history == NULL) {
@@ -56,12 +56,7 @@ static inline post_event_history_t *post_events_init_buffers(
         return NULL;
     }
 
-    // Allocate space for the vector of indices
-    post_event_indices -> object_indices = spin1_malloc(n_neurons * sizeof(uint32_t));
-    post_event_indices -> object_sizes = spin1_malloc(n_neurons * sizeof(uint32_t));
-
-    post_event_indices -> start_address = (int) post_event_history;
-    post_event_indices -> n_neurons = n_neurons;
+    init_gc_vectors (post_event_vec, post_event_shadow_vec, n_neurons, post_event_history);
 
     // Loop through neurons
     for (uint32_t n = 0; n < n_neurons; n++) {
@@ -72,12 +67,11 @@ static inline post_event_history_t *post_events_init_buffers(
         post_event_history[n].count_minus_one = 0;
 
         // Initialize vector of live objects.
-
         // Add initial index of a history trace buffer of this neuron.
-        (post_event_indices -> object_indices)[n] = n * sizeof(post_event_history_t);
+        ((*post_event_vec) -> object_indices)[n] = n * sizeof(post_event_history_t);
 
         // Add initial size of the history trace buffer of this neuron.
-        (post_event_indices -> object_sizes)[n] = sizeof(post_event_history_t);
+        ((*post_event_vec) -> object_sizes)[n] = sizeof(post_event_history_t);
     }
 
     return post_event_history;
