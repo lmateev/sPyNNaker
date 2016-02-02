@@ -37,7 +37,9 @@ typedef struct {
 //---------------------------------------
 // Inline functions
 //---------------------------------------
-static inline post_event_history_t *post_events_init_buffers(uint32_t n_neurons, vector_t *post_event_indices) {
+static inline post_event_history_t *post_events_init_buffers(
+        uint32_t n_neurons, vector_t *post_event_indices) {
+
     post_event_history_t *post_event_history =
         (post_event_history_t*) spin1_malloc(
             n_neurons * sizeof(post_event_history_t));
@@ -45,11 +47,8 @@ static inline post_event_history_t *post_events_init_buffers(uint32_t n_neurons,
     // Allocate extra space for history traces in case we will overflow
     // maximum number of traces.
     // **NOTE**: For now giving 2 extra traces for each neuron but this needs
-    // to be calculated accurately for later.
-    spin1_malloc(n_neurons * 2 * (sizeof(uint32_t) + sizeof(post_event_history_t)));
-
-    // Allocate space for the vector of indices
-    post_event_indices -> object_indices = spin1_malloc(n_neurons * sizeof(uint32_t));
+    // to be calculated accurately later on.
+    spin1_malloc(n_neurons * 2 * (sizeof(uint32_t) + sizeof(post_trace_t)));
 
     // Check allocations succeeded
     if (post_event_history == NULL) {
@@ -57,7 +56,12 @@ static inline post_event_history_t *post_events_init_buffers(uint32_t n_neurons,
         return NULL;
     }
 
-    uint32_t current_index = 0;
+    // Allocate space for the vector of indices
+    post_event_indices -> object_indices = spin1_malloc(n_neurons * sizeof(uint32_t));
+    post_event_indices -> object_sizes = spin1_malloc(n_neurons * sizeof(uint32_t));
+
+    post_event_indices -> start_address = (int) post_event_history;
+    post_event_indices -> n_neurons = n_neurons;
 
     // Loop through neurons
     for (uint32_t n = 0; n < n_neurons; n++) {
@@ -70,8 +74,7 @@ static inline post_event_history_t *post_events_init_buffers(uint32_t n_neurons,
         // Initialize vector of live objects.
 
         // Add initial index of a history trace buffer of this neuron.
-        (post_event_indices -> object_indices)[n] = current_index;
-        current_index += sizeof(post_event_history_t);
+        (post_event_indices -> object_indices)[n] = n * sizeof(post_event_history_t);
 
         // Add initial size of the history trace buffer of this neuron.
         (post_event_indices -> object_sizes)[n] = sizeof(post_event_history_t);
@@ -190,26 +193,12 @@ static inline post_event_window_t post_events_next_delayed(
 static inline void post_events_add(uint32_t time, post_event_history_t *events,
                                    post_trace_t trace) {
 
-    if (events->count_minus_one < (MAX_POST_SYNAPTIC_EVENTS - 1)) {
-
         // If there's still space, store time at current end
         // and increment count minus 1
         const uint32_t new_index = ++events->count_minus_one;
         events->times[new_index] = time;
         events->traces[new_index] = trace;
-    } else {
 
-        // Otherwise Shuffle down elements
-        // **NOTE** 1st element is always an entry at time 0
-        for (uint32_t e = 2; e < MAX_POST_SYNAPTIC_EVENTS; e++) {
-            events->times[e - 1] = events->times[e];
-            events->traces[e - 1] = events->traces[e];
-        }
-
-        // Stick new time at end
-        events->times[MAX_POST_SYNAPTIC_EVENTS - 1] = time;
-        events->traces[MAX_POST_SYNAPTIC_EVENTS - 1] = trace;
-    }
 }
 
 #endif  // _POST_EVENTS_H_

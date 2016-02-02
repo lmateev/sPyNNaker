@@ -134,6 +134,9 @@ bool synapse_dynamics_initialise(
         return false;
     }
 
+    // Initialize vector of live objects
+    post_event_indices = spin1_malloc(sizeof(vector_t));
+
     post_event_history = post_events_init_buffers(n_neurons, post_event_indices);
     if (post_event_history == NULL) {
         return false;
@@ -228,6 +231,13 @@ void synapse_dynamics_process_post_synaptic_event(
     const uint32_t last_post_time = history->times[history->count_minus_one];
     const post_trace_t last_post_trace =
         history->traces[history->count_minus_one];
+
+    // Extend buffer if it is full
+    if (history->count_minus_one == (MAX_POST_SYNAPTIC_EVENTS - 1))
+        extend_hist_trace_buffer(post_event_indices,
+                                 neuron_index,
+                                 sizeof(post_trace_t) + sizeof(uint32_t));
+
     post_events_add(time, history, timing_add_post_spike(time, last_post_time,
                                                          last_post_trace));
 }

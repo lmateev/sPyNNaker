@@ -24,9 +24,10 @@ vector will be 0x8, i.e. a size of all objects before it, in bytes.
 
 */
 typedef struct {
-  uint32_t *object_indices;          // Pointer - START_OF_DTCM_HEAP
-  uint32_t *object_sizes;            // Size of objects, in bytes.
-  uint32_t size;                     // Size of all objects in bytes.
+  uint16_t *object_indices;          // Pointer - START_OF_DTCM_HEAP
+  uint16_t *object_sizes;            // Size of objects, in bytes.
+  uint32_t start_address;            // The start address of the array
+  uint32_t n_neurons;                // Number of neurons in simulation
 } vector_t;
 
 
@@ -99,9 +100,8 @@ of history trace buffers. Update the index and size of the
 relocated buffer.
 
 */
-void extend_hist_trace_buffer(int *traces, vector_t *live_objects,
+int extend_hist_trace_buffer(vector_t *live_objects,
                               int move_neuron_index,
-                              int *post_event_history,
                               int extend_by);
 
 /*

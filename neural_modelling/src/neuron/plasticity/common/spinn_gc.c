@@ -117,6 +117,9 @@ Inputs: dest, src : Destination and source of the copying.
 */
 uint sark_block_copy(void *dest, const void *src, uint n) {
 
+  log_info("ARM block copy commences, dest: %x, src: %x, size: %u",
+                   dest, src, n);
+
   asm (
     "      PUSH   {r0-r3}        \n\t"
     "      LDR    r0, %[from]    \n\t"
@@ -125,24 +128,24 @@ uint sark_block_copy(void *dest, const void *src, uint n) {
 
     "blockcopy%=:                \n\t"
     "      MOVS   r3, r2, LSR #4 \n\t"
-    "      BEQ    copybytes      \n\t"
+    "      BEQ    copybytes%=    \n\t"
     "      PUSH   {r4-r7}        \n\t"
 
     "quadcopy%=:                 \n\t"
     "      LDM    r0!, {r4-r7}   \n\t"
     "      STM    r1!, {r4-r7}   \n\t"
     "      SUBS   r3, #1         \n\t"
-    "      BNE    quadcopy       \n\t"
+    "      BNE    quadcopy%=     \n\t"
     "      POP    {r4-r7}        \n\t"
 
     "copybytes%=:                \n\t"
     "      ANDS   r2, r2, #15    \n\t"
-    "      BEQ    stop           \n\t"
+    "      BEQ    stop%=         \n\t"
     "bytecopy%=:                 \n\t"
     "      LDRB   r3, [r0], #1   \n\t"
     "      STRB   r3, [r1], #1   \n\t"
     "      SUBS   r2, r2, #1     \n\t"
-    "      BNE    bytecopy       \n\t"
+    "      BNE    bytecopy%=     \n\t"
 
     "stop%=:                     \n\t"
     "      POP    {r0-r3}        \n\t"
@@ -200,34 +203,43 @@ Move a buffer of history traces to the end of the strucutre
 of history trace buffers. Update the index and size of the
 relocated buffer.
 
+Returns address of the buffer.
+
 */
-void extend_hist_trace_buffer(int *traces, vector_t *live_objects,
+int extend_hist_trace_buffer(vector_t *live_objects,
                               int move_neuron_index,
-                              int *post_event_history,
                               int extend_by) {
+
+  log_info("Buffer extension commences");
 
   // Get address next to the end of history trace structure.
   int last_buffer = 0;
-  for (int i = 1; i < sizeof(live_objects -> object_indices); i++) {
+  for (int i = 1; i < live_objects -> n_neurons; i++) {
     if ((live_objects -> object_indices)[i]
         > (live_objects -> object_indices)[last_buffer])
       last_buffer = i;
   }
 
-  int *end_of_buffer_structure = (live_objects -> object_indices)[last_buffer]
-                                  + post_event_history
-                                  + (live_objects -> object_sizes)[last_buffer];
+  if (move_neuron_index == last_buffer)
+    return (live_objects -> object_indices)[last_buffer]
+           +  live_objects -> start_address;
+
+  int end_of_buffer_structure = (live_objects -> object_indices)[last_buffer]
+                                 +  live_objects -> start_address
+                                 + (live_objects -> object_sizes)[last_buffer];
 
   // Copy the specified buffer to the end
   sark_block_copy(end_of_buffer_structure,
                   (live_objects -> object_indices)[move_neuron_index]
-                  + post_event_history,
+                  + live_objects -> start_address,
                   (live_objects -> object_sizes)[move_neuron_index]);
 
   // Update entry in the vector of live objects and the buffer's size.
-  (live_objects -> object_indices)[move_neuron_index] = end_of_buffer_structure;
-  (live_objects -> object_sizes)[move_neuron_index] +=
-      extend_by;
+  (live_objects -> object_indices)[move_neuron_index] = end_of_buffer_structure
+                                                        - live_objects -> start_address;
+  (live_objects -> object_sizes)[move_neuron_index] += extend_by;
+
+  return end_of_buffer_structure;
 }
 
 
