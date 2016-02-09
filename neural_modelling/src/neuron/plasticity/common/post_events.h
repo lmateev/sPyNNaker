@@ -66,10 +66,8 @@ static inline post_event_history_t *post_events_init_buffers(
         post_event_history[n].traces[0] = timing_get_initial_post_trace();
         post_event_history[n].count_minus_one = 0;
 
-        // Initialize vector of live objects.
         // Add initial index of a history trace buffer of this neuron.
         ((*post_event_vec) -> object_indices)[n] = n * sizeof(post_event_history_t);
-
         // Add initial size of the history trace buffer of this neuron.
         ((*post_event_vec) -> object_sizes)[n] = sizeof(post_event_history_t);
     }

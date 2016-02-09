@@ -93,7 +93,7 @@ to each object on the heap.
 */
 uint sizeof_dtcm_block (block_t * pointer) {
 
-  // Read block_t structu of the given block
+  // Read block_t structure of the given block
   pointer -= 1;
 
   // Calculate size in bytes
@@ -119,7 +119,7 @@ Inputs: dest, src : Destination and source addresses.
 */
 void sark_block_copy (int dest, const int src, uint n) {
 
-  // Convert n to number of words.
+  // Convert size n to number of words.
   if (n % 4 != 0)
     n = n / 4 + (n % 4);
   else
@@ -152,9 +152,9 @@ void sark_block_copy (int dest, const int src, uint n) {
     "      BNE    wordcopy%=     \n\t"
 
     "stop%=:                     \n\t"
-    :: [to] "m" (dest),      /* Address to copy block to */
-       [from] "m" (src),     /* Address where block resides */
-       [size] "r" (n)        /* Size in words */
+    :: [to] "m" (dest),
+       [from] "m" (src),
+       [size] "r" (n)
     : "cc", "r0", "r1", "r2", "r3"
   );
 
@@ -167,16 +167,12 @@ Initialize vectors of live objects.
 */
 void init_gc_vectors (vector_t **vec1, vector_t **vec2, int n_neurons, void* buff_addr) {
 
-  // Create a working vector of live objects which eventually will be
-  // interchanged with the given live_objects.
   *vec1 = spin1_malloc (sizeof(vector_t));
   (*vec1) -> object_indices =  spin1_malloc (n_neurons * sizeof(uint32_t));
   (*vec1) -> object_sizes =    spin1_malloc (n_neurons * sizeof(uint32_t));
   (*vec1) -> n_neurons = n_neurons;
   (*vec1) -> start_address = (int) buff_addr;
 
-  // Create a working vector of live objects which eventually will be
-  // interchanged with the given live_objects after each compaction operation.
   *vec2 = spin1_malloc (sizeof(vector_t));
   (*vec2) -> object_indices =  spin1_malloc (n_neurons * sizeof(uint32_t));
   (*vec2) -> object_sizes =    spin1_malloc (n_neurons * sizeof(uint32_t));
@@ -207,14 +203,13 @@ void compact_post_traces (vector_t **live_objects_vec, vector_t **shadow_vec) {
   int *init_address = address_in_sdram;
   int overall_size = 0;
 
+  // Copy live objects to SDRAM in a consecutive block
   for (int i = 0; i < (*live_objects_vec) -> n_neurons; i++) {
-    // Copy buffer to SDRAM.
     sark_block_copy ((int)address_in_sdram,
                      (int)(*live_objects_vec) -> start_address + ((*live_objects_vec) -> object_indices)[i],
                      ((*live_objects_vec) -> object_sizes)[i]);
     overall_size += ((*live_objects_vec) -> object_sizes)[i];
 
-    // Build a shadow vector of live objects that contains compacted indices
     ((*shadow_vec) -> object_indices)[i] = (int)address_in_sdram - (int)init_address;
     ((*shadow_vec) -> object_sizes)[i] = ((*live_objects_vec) -> object_sizes)[i];
 
@@ -225,7 +220,6 @@ void compact_post_traces (vector_t **live_objects_vec, vector_t **shadow_vec) {
   int *addr = (int*)((*live_objects_vec) -> start_address + overall_size - 4);
   addr[0] = -1;
 
-  // Read live objects back to DTCM.
   spin1_dma_transfer (0,
                       init_address,
                       (uint*)(*live_objects_vec) -> start_address,
@@ -247,7 +241,6 @@ void compact_post_traces (vector_t **live_objects_vec, vector_t **shadow_vec) {
 
   sark_xfree (sv -> sdram_heap, init_address, 0);
 
-  // Interchange the vectors of indices
   vector_t *tmp = *live_objects_vec;
   *live_objects_vec = *shadow_vec;
   *shadow_vec = tmp;
@@ -268,7 +261,6 @@ void *extend_hist_trace_buffer (vector_t *live_objects_vec,
 
   log_info ("Post trace buffer extension starts");
 
-  // Get last buffer's index.
   int last_buffer = 0;
   for (int i = 1; i < live_objects_vec -> n_neurons; i++) {
     if ((live_objects_vec -> object_indices)[i]
@@ -287,14 +279,14 @@ void *extend_hist_trace_buffer (vector_t *live_objects_vec,
                                  +  live_objects_vec -> start_address
                                  + (live_objects_vec -> object_sizes)[last_buffer];
 
-  // Copy the specified buffer to the end
+  // Copy the specified buffer to the end of all buffers.
   sark_block_copy (end_of_buffer_structure,
                    (live_objects_vec -> object_indices)[move_neuron_index]
                    + live_objects_vec -> start_address,
                    (live_objects_vec -> object_sizes)[move_neuron_index]);
 
-  // Update entry in the vector of live objects and the buffer's size.
-  (live_objects_vec -> object_indices)[move_neuron_index] = end_of_buffer_structure - (live_objects_vec -> start_address);
+  (live_objects_vec -> object_indices)[move_neuron_index] =
+      end_of_buffer_structure - (live_objects_vec -> start_address);
   (live_objects_vec -> object_sizes)[move_neuron_index] += extend_by;
 
   return (void*)end_of_buffer_structure;
