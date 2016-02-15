@@ -50,13 +50,13 @@ MIN_SUPPORTED_DELAY = 1
 POPULATION_BASED_REGIONS = Enum(
     value="POPULATION_BASED_REGIONS",
     names=[('SYSTEM', 0),
-           ('NEURON_PARAMS', 1),
-           ('SYNAPSE_PARAMS', 2),
-           ('POPULATION_TABLE', 3),
-           ('SYNAPTIC_MATRIX', 4),
-           ('SYNAPSE_DYNAMICS', 5),
-           ('SPIKE_HISTORY', 6),
-           ('POTENTIAL_HISTORY', 7),
-           ('GSYN_HISTORY', 8),
-           ('BUFFERING_OUT_STATE', 9),
-           ('PROFILING', 10)])
+           ('PROFILING', 1),
+           ('NEURON_PARAMS', 2),
+           ('SYNAPSE_PARAMS', 3),
+           ('POPULATION_TABLE', 4),
+           ('SYNAPTIC_MATRIX', 5),
+           ('SYNAPSE_DYNAMICS', 6),
+           ('SPIKE_HISTORY', 7),
+           ('POTENTIAL_HISTORY', 8),
+           ('GSYN_HISTORY', 9),
+           ('BUFFERING_OUT_STATE', 10)])
