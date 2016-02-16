@@ -15,6 +15,7 @@
 #include <debug.h>
 
 #include "./spinn_gc.h"
+#include "../../profiler.h"
 
 //------------------------------------------------------------------------------
 // Various debugging routines mainly to print out memory contents or
@@ -193,6 +194,7 @@ a shadow_vec and interchange it with live_objects_vec at the end.
 void compact_post_traces (vector_t **live_objects_vec, vector_t **shadow_vec) {
 
   log_info ("Memory compaction starts");
+  profiler_write_entry_disable_irq_fiq(PROFILER_ENTER | PROFILER_COMPACT_POST_TRACES);
 
   // Allocate 32KB in SDRAM heap for work space.
   // **NOTE: Can also individually allocate space for each buffer in the for loop
@@ -244,6 +246,8 @@ void compact_post_traces (vector_t **live_objects_vec, vector_t **shadow_vec) {
   vector_t *tmp = *live_objects_vec;
   *live_objects_vec = *shadow_vec;
   *shadow_vec = tmp;
+
+  profiler_write_entry_disable_irq_fiq(PROFILER_EXIT | PROFILER_COMPACT_POST_TRACES);
 }
 
 /*
