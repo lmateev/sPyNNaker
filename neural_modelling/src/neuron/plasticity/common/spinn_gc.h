@@ -27,6 +27,7 @@ typedef struct {
   uint16_t *object_indices;          // An offset to an object
   uint16_t *object_sizes;            // Size of objects, in bytes.
   uint32_t start_address;            // The start address of the structure
+  uint16_t size;                     // Overall buffer size.
   uint32_t n_neurons;                // Number of neurons in simulation
 } vector_t;
 
@@ -84,7 +85,8 @@ void sark_block_copy (int dest, const int src, uint n);
 Initialize vector of live objects and shadow vector.
 
 */
-void init_gc_vectors (vector_t **vec1, vector_t **vec2, int n_neurons, void* buff_addr);
+void init_gc_vectors (vector_t **vec1, vector_t **vec2, int n_neurons,
+                      void* buff_addr, void* buff_top);
 
 /*
 

@@ -297,15 +297,22 @@ void synapse_dynamics_process_post_synaptic_event(
     const post_trace_t last_post_trace =
         history->traces[history->count_minus_one];
 
+    bool shift_elements = false;
+
     // Extend buffer if it is full
     if (history->count_minus_one >= (MAX_POST_SYNAPTIC_EVENTS - 1)) {
-        history = (post_trace_t *) extend_hist_trace_buffer(post_event_vec,
+        void* new_location = (post_trace_t *) extend_hist_trace_buffer(post_event_vec,
                                            neuron_index,
                                            sizeof(post_trace_t) + sizeof(uint32_t));
+        if (new_location != NULL)
+          history = new_location;
+        else
+          shift_elements = true;
     }
 
     post_events_add(time, history, timing_add_post_spike(time, last_post_time,
-                                                         last_post_trace));
+                                                         last_post_trace),
+                    shift_elements);
 }
 
 input_t synapse_dynamics_get_intrinsic_bias(uint32_t time, index_t neuron_index) {

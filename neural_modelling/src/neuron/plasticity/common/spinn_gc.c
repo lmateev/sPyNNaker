@@ -166,20 +166,22 @@ void sark_block_copy (int dest, const int src, uint n) {
 Initialize vectors of live objects.
 
 */
-void init_gc_vectors (vector_t **vec1, vector_t **vec2, int n_neurons, void* buff_addr) {
+void init_gc_vectors (vector_t **vec1, vector_t **vec2, int n_neurons,
+                      void* buff_addr, void* buff_top) {
 
   *vec1 = spin1_malloc (sizeof(vector_t));
   (*vec1) -> object_indices =  spin1_malloc (n_neurons * sizeof(uint32_t));
   (*vec1) -> object_sizes =    spin1_malloc (n_neurons * sizeof(uint32_t));
   (*vec1) -> n_neurons = n_neurons;
   (*vec1) -> start_address = (int) buff_addr;
+  (*vec1) -> size = buff_top - buff_addr;
 
   *vec2 = spin1_malloc (sizeof(vector_t));
   (*vec2) -> object_indices =  spin1_malloc (n_neurons * sizeof(uint32_t));
   (*vec2) -> object_sizes =    spin1_malloc (n_neurons * sizeof(uint32_t));
   (*vec2) -> n_neurons = n_neurons;
   (*vec2) -> start_address = (int) buff_addr;
-
+  (*vec2) -> size = buff_top - buff_addr;
 
 }
 
@@ -272,28 +274,38 @@ void *extend_hist_trace_buffer (vector_t *live_objects_vec,
       last_buffer = i;
   }
 
-  // Do not extend if move_neuron_index is at the end of buffer structure.
+  uint32_t end_of_last_buffer = (live_objects_vec -> object_indices)[last_buffer]
+                                +  live_objects_vec -> start_address
+                                + (live_objects_vec -> object_sizes)[last_buffer];
+  uint32_t ptr_to_neuron_traces = (void*)((live_objects_vec -> object_indices)[move_neuron_index]
+                                          + live_objects_vec -> start_address);
+
+  // Check if there is enough space to extend.
+  if (live_objects_vec -> start_address + live_objects_vec -> size
+      <= end_of_last_buffer + live_objects_vec -> object_sizes[move_neuron_index]
+         + extend_by) {
+    log_info("Element shift occurs.");
+    return NULL;
+  }
+
+  // Do not move the buffer if it is already at the end.
   if (move_neuron_index == last_buffer) {
     (live_objects_vec -> object_sizes)[move_neuron_index] += extend_by;
     return (void*)((live_objects_vec -> object_indices)[last_buffer]
                    + live_objects_vec -> start_address);
   }
 
-  uint32_t end_of_buffer_structure = (live_objects_vec -> object_indices)[last_buffer]
-                                 +  live_objects_vec -> start_address
-                                 + (live_objects_vec -> object_sizes)[last_buffer];
-
   // Copy the specified buffer to the end of all buffers.
-  sark_block_copy (end_of_buffer_structure,
+  sark_block_copy (end_of_last_buffer,
                    (live_objects_vec -> object_indices)[move_neuron_index]
                    + live_objects_vec -> start_address,
                    (live_objects_vec -> object_sizes)[move_neuron_index]);
 
   (live_objects_vec -> object_indices)[move_neuron_index] =
-      end_of_buffer_structure - (live_objects_vec -> start_address);
+      end_of_last_buffer - (live_objects_vec -> start_address);
   (live_objects_vec -> object_sizes)[move_neuron_index] += extend_by;
 
-  return (void*)end_of_buffer_structure;
+  return (void*)end_of_last_buffer;
 }
 
 //------------------------------------------------------------------------------

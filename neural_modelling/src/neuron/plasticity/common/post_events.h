@@ -48,15 +48,21 @@ static inline post_event_history_t *post_events_init_buffers(
     // Allocate extra space for buffer extender.
     // **NOTE: For now giving 2 extra traces for each neuron but this needs
     // to be calculated properly when the rate of compaction will be known.
-    spin1_malloc (n_neurons * 2 * (sizeof(uint32_t) + sizeof(post_trace_t)));
+    block_t* extra_space = sark_alloc (
+        n_neurons, 2 * (sizeof(uint32_t) + sizeof(post_trace_t)));
+
+    // Then the last address of hist trace structure can be simply extracted
+    // from block_t of extra space.
+    uint32_t buffer_top_addr = (extra_space-1) -> next;
 
     // Check allocations succeeded
-    if (post_event_history == NULL) {
+    if (post_event_history == NULL || extra_space == NULL) {
         log_error("Unable to allocate global STDP structures - Out of DTCM");
         return NULL;
     }
 
-    init_gc_vectors (post_event_vec, post_event_shadow_vec, n_neurons, post_event_history);
+    init_gc_vectors (post_event_vec, post_event_shadow_vec,
+                     n_neurons, post_event_history, buffer_top_addr);
 
     // Loop through neurons
     for (uint32_t n = 0; n < n_neurons; n++) {
@@ -183,13 +189,28 @@ static inline post_event_window_t post_events_next_delayed(
 
 //---------------------------------------
 static inline void post_events_add(uint32_t time, post_event_history_t *events,
-                                   post_trace_t trace) {
+                                   post_trace_t trace, bool shift_elements) {
+
+    if (!shift_elements) {
 
         // If there's still space, store time at current end
         // and increment count minus 1
         const uint32_t new_index = ++events->count_minus_one;
         events->times[new_index] = time;
         events->traces[new_index] = trace;
+    } else {
+
+        // Otherwise Shuffle down elements
+        // **NOTE** 1st element is always an entry at time 0
+        for (uint32_t e = 2; e <= events -> count_minus_one; e++) {
+            events->times[e - 1] = events->times[e];
+            events->traces[e - 1] = events->traces[e];
+        }
+
+        // Stick new time at end
+        events->times[events->count_minus_one] = time;
+        events->traces[events->count_minus_one] = trace;
+    }
 
 }
 
