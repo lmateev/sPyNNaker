@@ -184,8 +184,6 @@ void timer_callback(uint timer_count, uint unused) {
     use(timer_count);
     use(unused);
 
-    profiler_write_entry_disable_irq_fiq(PROFILER_ENTER | PROFILER_TIMER);
-
     time++;
 
     log_debug("Timer tick %u \n", time);
@@ -198,8 +196,6 @@ void timer_callback(uint timer_count, uint unused) {
         synapses_print_saturation_count();
 
         spike_processing_print_buffer_overflows();
-
-        profiler_write_entry_disable_irq_fiq(PROFILER_EXIT | PROFILER_TIMER);
 
         // Finalise any recordings that are in progress, writing back the final
         // amounts of samples recorded to SDRAM
@@ -227,7 +223,6 @@ void timer_callback(uint timer_count, uint unused) {
         recording_do_timestep_update(time);
     }
  
-    profiler_write_entry_disable_irq_fiq(PROFILER_EXIT | PROFILER_TIMER);
 }
 
 //! \brief The entry point for this model.
