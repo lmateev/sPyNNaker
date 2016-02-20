@@ -10,6 +10,7 @@
 
 #include <sark.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "spin1_api.h"
 #include <debug.h>
@@ -170,15 +171,15 @@ void init_gc_vectors (vector_t **vec1, vector_t **vec2, int n_neurons,
                       void* buff_addr, void* buff_top) {
 
   *vec1 = spin1_malloc (sizeof(vector_t));
-  (*vec1) -> object_indices =  spin1_malloc (n_neurons * sizeof(uint32_t));
-  (*vec1) -> object_sizes =    spin1_malloc (n_neurons * sizeof(uint32_t));
+  (*vec1) -> object_indices =  spin1_malloc (n_neurons * sizeof(uint16_t));
+  (*vec1) -> object_sizes =    spin1_malloc (n_neurons * sizeof(uint16_t));
   (*vec1) -> n_neurons = n_neurons;
   (*vec1) -> start_address = (int) buff_addr;
   (*vec1) -> size = buff_top - buff_addr;
 
   *vec2 = spin1_malloc (sizeof(vector_t));
-  (*vec2) -> object_indices =  spin1_malloc (n_neurons * sizeof(uint32_t));
-  (*vec2) -> object_sizes =    spin1_malloc (n_neurons * sizeof(uint32_t));
+  (*vec2) -> object_indices =  spin1_malloc (n_neurons * sizeof(uint16_t));
+  (*vec2) -> object_sizes =    spin1_malloc (n_neurons * sizeof(uint16_t));
   (*vec2) -> n_neurons = n_neurons;
   (*vec2) -> start_address = (int) buff_addr;
   (*vec2) -> size = buff_top - buff_addr;
@@ -202,6 +203,10 @@ void compact_post_traces (vector_t **live_objects_vec, vector_t **shadow_vec) {
   // **NOTE: Can also individually allocate space for each buffer in the for loop
   // below where exact size is known.
   int *address_in_sdram = (int*) sark_xalloc (sv->sdram_heap, 1024 * 32, 0, 1);
+  if (address_in_sdram == NULL) {
+    log_info ("Not enough memory in SDRAM");
+  }
+
   log_debug ("Address in sdram allocated: %x", address_in_sdram);
 
   int *init_address = address_in_sdram;
@@ -212,6 +217,7 @@ void compact_post_traces (vector_t **live_objects_vec, vector_t **shadow_vec) {
     sark_block_copy ((int)address_in_sdram,
                      (int)(*live_objects_vec) -> start_address + ((*live_objects_vec) -> object_indices)[i],
                      ((*live_objects_vec) -> object_sizes)[i]);
+
     overall_size += ((*live_objects_vec) -> object_sizes)[i];
 
     ((*shadow_vec) -> object_indices)[i] = (int)address_in_sdram - (int)init_address;
@@ -224,13 +230,11 @@ void compact_post_traces (vector_t **live_objects_vec, vector_t **shadow_vec) {
   int *addr = (int*)((*live_objects_vec) -> start_address + overall_size - 4);
   addr[0] = -1;
 
-  spin1_dma_transfer (0,
+  spin1_dma_transfer (2,
                       init_address,
                       (uint*)(*live_objects_vec) -> start_address,
                       DMA_READ,
                       overall_size);
-
-  int count = 0;
 
   // Wait for marked memory location to be changed by DMA read.
   asm (
@@ -265,7 +269,7 @@ void *extend_hist_trace_buffer (vector_t *live_objects_vec,
                                 int move_neuron_index,
                                 int extend_by) {
 
-  log_info ("Post trace buffer extension starts");
+  log_debug ("Post trace buffer extension starts");
 
   int last_buffer = 0;
   for (int i = 1; i < live_objects_vec -> n_neurons; i++) {
@@ -284,7 +288,7 @@ void *extend_hist_trace_buffer (vector_t *live_objects_vec,
   if (live_objects_vec -> start_address + live_objects_vec -> size
       <= end_of_last_buffer + live_objects_vec -> object_sizes[move_neuron_index]
          + extend_by) {
-    log_info("Element shift occurs.");
+    log_debug("Element shift occurs.");
     return NULL;
   }
 
