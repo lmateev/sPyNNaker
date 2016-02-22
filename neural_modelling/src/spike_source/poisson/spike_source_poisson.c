@@ -117,6 +117,9 @@ static uint32_t simulation_ticks = 0;
 //! the int that represents the bool for if the run is infinite or not.
 static uint32_t infinite_run;
 
+static uint32_t n_timer1_reent = 0;
+static uint32_t n_timer2_reent = 0;
+
 //! \brief deduces the time in timer ticks until the next spike is to occur
 //!        given the mean inter-spike interval
 //! \param[in] mean_inter_spike_interval_in_ticks The mean number of ticks
@@ -326,6 +329,7 @@ void timer2_callback(uint timer_count, uint unused) {
 
     // If this is an accident, skip it
     if (!timer_running) {
+        n_timer2_reent += 1;
         return;
     }
 
@@ -432,6 +436,7 @@ void timer_callback(uint timer_count, uint unused) {
 
     // If this has come too early, skip it
     if (timer_running) {
+        n_timer1_reent += 1;
         return;
     }
 
@@ -448,6 +453,8 @@ void timer_callback(uint timer_count, uint unused) {
             recording_finalise();
         }
         // go into pause and resume state
+        log_info("Timer 1 Reentered %u times", n_timer1_reent);
+        log_info("Timer 2 Reentered %u times", n_timer2_reent);
         simulation_handle_pause_resume(timer_callback, TIMER);
 
         // handle resetting the recording state
