@@ -8,13 +8,11 @@
 // Include debug header for log_info etc
 #include <debug.h>
 
-// Garbage collection include
-#include "spinn_gc.h"
-
 //---------------------------------------
 // Macros
 //---------------------------------------
 #define MAX_POST_SYNAPTIC_EVENTS 4
+#define TRACE_SIZE (sizeof(post_trace_t) + sizeof(uint32_t))
 
 //---------------------------------------
 // Structures
@@ -22,8 +20,9 @@
 typedef struct {
     uint32_t count_minus_one;
 
-    uint32_t times[MAX_POST_SYNAPTIC_EVENTS];
-    post_trace_t traces[MAX_POST_SYNAPTIC_EVENTS];
+    uint32_t* times;
+    post_trace_t* traces;
+    uint16_t size;                  // Total size of both times+traces arrays.
 } post_event_history_t;
 
 typedef struct {
@@ -34,35 +33,53 @@ typedef struct {
     uint32_t num_events;
 } post_event_window_t;
 
+typedef struct {
+  uint32_t start_address;            // Top of buffer structure
+  uint16_t size;                     // Overall size of all buffers
+  uint32_t n_neurons;
+  post_event_history_t* buffers;
+} vector_t;
+
+// Garbage collection include
+#include "spinn_gc.h"
+
+vector_t live_objects;
+
 //---------------------------------------
 // Inline functions
 //---------------------------------------
-static inline post_event_history_t *post_events_init_buffers(
-        uint32_t n_neurons, vector_t **post_event_vec,
-        vector_t **post_event_shadow_vec) {
+static inline post_event_history_t *post_events_init_buffers(uint32_t n_neurons) {
 
     post_event_history_t *post_event_history =
         (post_event_history_t*) spin1_malloc(
             n_neurons * sizeof(post_event_history_t));
 
-    // Allocate extra space for buffer extender.
+    void* post_event_data =
+            spin1_malloc(n_neurons * MAX_POST_SYNAPTIC_EVENTS * TRACE_SIZE);
+
+    live_objects.start_address = post_event_data;
+    live_objects.n_neurons = n_neurons;
+    live_objects.buffers = post_event_history;
+
+    // Set internal pointers of each buffer
+    for (int i = 0; i < n_neurons; i++) {
+      post_event_history[i].times = post_event_data;
+      post_event_history[i].traces = (void*)post_event_history[i].times + MAX_POST_SYNAPTIC_EVENTS*sizeof(uint32_t);
+      post_event_data += MAX_POST_SYNAPTIC_EVENTS * TRACE_SIZE;
+    }
+
+    // Allocate extra space below post event data block for extensions.
     // **NOTE: For now giving 2 extra traces for each neuron but this needs
     // to be calculated properly when the rate of compaction will be known.
-    block_t* extra_space = sark_alloc (
-        n_neurons, 2 * (sizeof(uint32_t) + sizeof(post_trace_t)));
+    block_t* extra_space = spin1_malloc(n_neurons * 2 * TRACE_SIZE);
 
-    // Then the last address of hist trace structure can be simply extracted
-    // from block_t of extra space.
-    uint32_t buffer_top_addr = (extra_space-1) -> next;
+    live_objects.size = n_neurons * (MAX_POST_SYNAPTIC_EVENTS + 2) * TRACE_SIZE;
 
     // Check allocations succeeded
-    if (post_event_history == NULL || extra_space == NULL) {
+    if (post_event_history == NULL || post_event_data == NULL || extra_space == NULL) {
         log_error("Unable to allocate global STDP structures - Out of DTCM");
         return NULL;
     }
-
-    init_gc_vectors (post_event_vec, post_event_shadow_vec,
-                     n_neurons, post_event_history, buffer_top_addr);
 
     // Loop through neurons
     for (uint32_t n = 0; n < n_neurons; n++) {
@@ -71,11 +88,8 @@ static inline post_event_history_t *post_events_init_buffers(
         post_event_history[n].times[0] = 0;
         post_event_history[n].traces[0] = timing_get_initial_post_trace();
         post_event_history[n].count_minus_one = 0;
-
-        // Add initial index of a history trace buffer of this neuron.
-        ((*post_event_vec) -> object_indices)[n] = n * sizeof(post_event_history_t);
         // Add initial size of the history trace buffer of this neuron.
-        ((*post_event_vec) -> object_sizes)[n] = sizeof(post_event_history_t);
+        post_event_history[n].size = MAX_POST_SYNAPTIC_EVENTS * TRACE_SIZE;
     }
 
     return post_event_history;
@@ -188,8 +202,21 @@ static inline post_event_window_t post_events_next_delayed(
 }
 
 //---------------------------------------
+static int events_count = 0;
 static inline void post_events_add(uint32_t time, post_event_history_t *events,
-                                   post_trace_t trace, bool shift_elements) {
+                                   post_trace_t trace, uint32_t index) {
+
+    // Just a placeholder: Scan for garbage and compact every 1000 events.
+    events_count++;
+    if (events_count % 1000 == 0) {
+       if (time > 1000)
+           scan_history_traces (&live_objects, time-1000);
+       compact_post_traces (&live_objects);
+    }
+
+    bool shift_elements = false;
+    if (events -> count_minus_one >= MAX_POST_SYNAPTIC_EVENTS - 1)
+       shift_elements = !extend_hist_trace_buffer(&live_objects, events, index);
 
     if (!shift_elements) {
 

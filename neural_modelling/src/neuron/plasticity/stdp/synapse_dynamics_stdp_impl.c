@@ -18,8 +18,6 @@ uint32_t num_plastic_pre_synaptic_events;
 #endif  // SYNAPSE_BENCHMARK
 
 post_event_history_t *post_event_history;
-vector_t             *post_event_vec;        // Store indices of post_event buffs.
-vector_t             *post_event_shadow_vec; // Duplicate of above, working space.
 
 //---------------------------------------
 // Synapse update loop
@@ -135,8 +133,7 @@ bool synapse_dynamics_initialise(
         return false;
     }
 
-    post_event_history = post_events_init_buffers(n_neurons, &post_event_vec,
-                                                  &post_event_shadow_vec);
+    post_event_history = post_events_init_buffers(n_neurons);
     if (post_event_history == NULL) {
         return false;
     }
@@ -191,8 +188,7 @@ bool synapse_dynamics_process_plastic_synapses(
         // Update the synapse state
         final_state_t final_state = _plasticity_update_synapse(
             time, last_pre_time, delay, current_state, event_history,
-            (post_event_history_t *)((int)post_event_history
-              + (post_event_vec->object_indices)[index]));
+            &post_event_history[index]);
 
         // Convert into ring buffer offset
         uint32_t ring_buffer_index = synapses_get_ring_buffer_index_combined(
@@ -225,28 +221,13 @@ void synapse_dynamics_process_post_synaptic_event(
     log_debug("Adding post-synaptic event to trace at time:%u", time);
 
     // Add post-event
-    post_event_history_t *history = (post_event_history_t *)((int)post_event_history
-                                      + (post_event_vec->object_indices)[neuron_index]);
+    post_event_history_t *history = &post_event_history[neuron_index];
     const uint32_t last_post_time = history->times[history->count_minus_one];
     const post_trace_t last_post_trace =
         history->traces[history->count_minus_one];
-
-    bool shift_elements = false;
-
-    // Extend buffer if it is full
-    if (history->count_minus_one >= (MAX_POST_SYNAPTIC_EVENTS - 1)) {
-        void* new_location = (post_trace_t *) extend_hist_trace_buffer(post_event_vec,
-                                           neuron_index,
-                                           sizeof(post_trace_t) + sizeof(uint32_t));
-        if (new_location != NULL)
-          history = new_location;
-        else
-          shift_elements = true;
-    }
-
     post_events_add(time, history, timing_add_post_spike(time, last_post_time,
                                                          last_post_trace),
-                    shift_elements);
+                    neuron_index);
 }
 
 input_t synapse_dynamics_get_intrinsic_bias(uint32_t time, index_t neuron_index) {
