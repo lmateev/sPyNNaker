@@ -30,7 +30,6 @@ endif
 
 OBJECTS = $(SOURCE_DIRS)/common/out_spikes.o \
           $(SOURCE_DIRS)/neuron/c_main.o \
-          $(SOURCE_DIRS)/neuron/plasticity/common/spinn_gc.o \
           $(SOURCE_DIRS)/neuron/synapses.o $(DIRS)/neuron/profiler.o $(SOURCE_DIRS)/neuron/neuron.o \
 	      $(SOURCE_DIRS)/neuron/spike_processing.o \
 	      $(SOURCE_DIRS)/neuron/population_table_$(POPULATION_TABLE_IMPL)_impl.o \
