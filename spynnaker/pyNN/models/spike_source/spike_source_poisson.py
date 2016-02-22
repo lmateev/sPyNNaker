@@ -225,6 +225,13 @@ class SpikeSourcePoisson(
         spec.write_value(random.randint(
             0, SpikeSourcePoisson._n_poisson_subvertices))
 
+        # Write the timer 2 tick in clock ticks
+        # TODO: This should really ask the CPU
+        ticks_per_us = 200.0
+        spec.write_value(int(float(
+            self._machine_time_step * self._timescale_factor *
+            ticks_per_us) / float(num_neurons * 1.5)))
+
         # Write the random seed (4 words), generated randomly!
         spec.write_value(data=self._rng.randint(0x7FFFFFFF))
         spec.write_value(data=self._rng.randint(0x7FFFFFFF))
