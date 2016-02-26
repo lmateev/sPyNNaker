@@ -42,6 +42,7 @@ typedef struct {
 // Garbage collection variables.
 vector_t live_objects;
 uint16_t TRACE_SIZE = sizeof(post_trace_t) + sizeof(uint32_t);
+void* address_in_sdram; // Working space for compactor.
 
 // Garbage collection include (Note: Leave it below preceding structs as they are used
 // inside sppinn_gc.h).
@@ -80,6 +81,9 @@ static inline post_event_history_t *post_events_init_buffers(uint32_t n_neurons)
     block_t* extra_space = spin1_malloc(n_neurons * 2 * TRACE_SIZE);
 
     live_objects.size = n_neurons * (MAX_POST_SYNAPTIC_EVENTS + 2) * TRACE_SIZE;
+
+    // Allocate compactor working space in SDRAM
+    address_in_sdram = (int*) sark_xalloc (sv->sdram_heap, live_objects.size, 0, 1);
 
     // Check allocations succeeded
     if (post_event_history == NULL || post_event_data == NULL || extra_space == NULL) {
@@ -208,15 +212,33 @@ static inline post_event_window_t post_events_next_delayed(
 }
 
 //---------------------------------------
+static inline void print_times_traces(post_event_history_t* events, uint32_t tag) {
+//  log_info("Count %d Size %d", events -> count_minus_one, events -> size);
+  bool print = false;
+  for (int i = 0; i <= events->count_minus_one; i++)
+    if (events->times[i] > 10000) {
+      print = true;
+      break;
+    }
+  if (print) {
+  log_info("%d", tag);
+  for (int i = 0; i <= events->count_minus_one; i++) {
+      log_info("T %d Tr %d T_a %x Tr_a: %x %d", events -> times[i],
+             events -> traces[i], events -> times, events -> traces, events -> count_minus_one);
+      spinn_print_mem (events->times, (void*)events->times+events->size);
+  }
+  }
+}
+
 static int events_count = 0;
 static inline void post_events_add(uint32_t time, post_event_history_t *events,
                                    post_trace_t trace, uint32_t index) {
-
+ 
     // Just a placeholder: Scan for garbage and compact every 1000 events.
     events_count++;
     if (events_count % 1000 == 0) {
-       if (time > 1000)
-           scan_history_traces (&live_objects, time-1000);
+       if (time > 500)
+           scan_history_traces (&live_objects, time-500);
        compact_post_traces (&live_objects);
     }
 
@@ -239,11 +261,13 @@ static inline void post_events_add(uint32_t time, post_event_history_t *events,
             events->times[e - 1] = events->times[e];
             events->traces[e - 1] = events->traces[e];
         }
-
         // Stick new time at end
         events->times[events->count_minus_one] = time;
         events->traces[events->count_minus_one] = trace;
+
     }
+    if( events->count_minus_one > 150)
+      log_info("WARNING");
 
 }
 

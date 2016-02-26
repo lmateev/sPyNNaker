@@ -171,14 +171,6 @@ static inline void compact_post_traces (vector_t *live_objects_vec) {
   log_debug ("Memory compaction starts");
   profiler_write_entry_disable_irq_fiq(PROFILER_ENTER | PROFILER_COMPACT_POST_TRACES);
 
-  // Allocate 32KB in SDRAM heap for work space.
-  // **NOTE: Can also individually allocate space for each buffer in the for loop
-  // below where exact size is known.
-  int *address_in_sdram = (int*) sark_xalloc (sv->sdram_heap, live_objects_vec -> size, 0, 1);
-  if (address_in_sdram == NULL) {
-    log_info ("Not enough memory in SDRAM");
-  }
-
   log_debug ("Address in sdram allocated: %x", address_in_sdram);
 
   int *init_address = address_in_sdram;
@@ -205,6 +197,8 @@ static inline void compact_post_traces (vector_t *live_objects_vec) {
       (int*) ((int)address_in_sdram + (live_objects_vec -> buffers)[i].size);
   }
 
+  address_in_sdram = init_address;
+
   // Mark block in DTCM to detect when DMA completes.
   int *addr = (int*)(live_objects_vec -> start_address + overall_size - 4);
   addr[0] = -1;
@@ -225,8 +219,6 @@ static inline void compact_post_traces (vector_t *live_objects_vec) {
     :: [mark] "m" (addr)
     : "cc", "r3"
   );
-
-  sark_xfree (sv -> sdram_heap, init_address, 0);
 
   profiler_write_entry_disable_irq_fiq(PROFILER_EXIT | PROFILER_COMPACT_POST_TRACES);
 }
