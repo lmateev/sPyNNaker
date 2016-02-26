@@ -174,7 +174,7 @@ static inline void compact_post_traces (vector_t *live_objects_vec) {
   // Allocate 32KB in SDRAM heap for work space.
   // **NOTE: Can also individually allocate space for each buffer in the for loop
   // below where exact size is known.
-  int *address_in_sdram = (int*) sark_xalloc (sv->sdram_heap, 1024 * 32, 0, 1);
+  int *address_in_sdram = (int*) sark_xalloc (sv->sdram_heap, live_objects_vec -> size, 0, 1);
   if (address_in_sdram == NULL) {
     log_info ("Not enough memory in SDRAM");
   }
@@ -187,13 +187,19 @@ static inline void compact_post_traces (vector_t *live_objects_vec) {
   // Copy live objects to SDRAM in a consecutive block
   for (int i = 0; i < live_objects_vec -> n_neurons; i++) {
     sark_block_copy (address_in_sdram,
-                     (uint32_t)(live_objects_vec -> buffers)[i].times,
+                     (live_objects_vec -> buffers)[i].times,
                      (live_objects_vec -> buffers)[i].size);
 
     overall_size += (live_objects_vec -> buffers)[i].size;
 
+    int traces_offset = (void*)(live_objects_vec -> buffers)[i].traces
+                        - (void*)(live_objects_vec -> buffers)[i].times;
+
+    // Update references.
     (live_objects_vec -> buffers)[i].times =
       live_objects_vec -> start_address + ((int)address_in_sdram - (int)init_address);
+    (live_objects_vec -> buffers)[i].traces =
+      (void *)(live_objects_vec -> buffers)[i].times + traces_offset;
 
     address_in_sdram =
       (int*) ((int)address_in_sdram + (live_objects_vec -> buffers)[i].size);
@@ -235,10 +241,12 @@ Returns false if there is not enough space.
 
 */
 static inline bool extend_hist_trace_buffer (vector_t *live_objects_vec,
-                                post_event_history_t* buffer_to_move,
-                                uint32_t move_neuron_index) {
+                                             post_event_history_t* buffer_to_move,
+                                             uint32_t move_neuron_index) {
 
   log_debug ("Post trace buffer extension starts");
+
+  profiler_write_entry(PROFILER_ENTER | PROFILER_EXTEND_POST_BUFFER);
 
   int last_buffer = 0;
   for (int i = 1; i < live_objects_vec -> n_neurons; i++) {
@@ -247,59 +255,59 @@ static inline bool extend_hist_trace_buffer (vector_t *live_objects_vec,
       last_buffer = i;
   }
 
-  uint32_t end_of_last_buffer = (uint32_t)(live_objects_vec -> buffers)[last_buffer].times
-                                + (live_objects_vec -> buffers)[last_buffer].size;
+  void* end_of_last_buffer = (void*)(live_objects_vec -> buffers)[last_buffer].times
+                                     + (live_objects_vec -> buffers)[last_buffer].size;
 
   // Check if there is enough space at the end of the heap to extend the buffer.
   if (live_objects_vec -> start_address + live_objects_vec -> size
-      <= end_of_last_buffer + buffer_to_move -> size
-         + TRACE_SIZE) {
+      <= (end_of_last_buffer + buffer_to_move -> size
+          + TRACE_SIZE)) {
+    log_debug("No space to extend");
+    profiler_write_entry_disable_irq_fiq(PROFILER_EXIT | PROFILER_EXTEND_POST_BUFFER);
     return false;
   }
 
-  // Do not move the buffer if it is already at the end.
-  if (move_neuron_index == last_buffer) {
-    buffer_to_move -> size += TRACE_SIZE;
-    return true;
+  if (move_neuron_index != last_buffer) {
+    // Copy the specified buffer to the end of all buffers.
+    sark_block_copy (end_of_last_buffer,
+                     buffer_to_move -> times,
+                     buffer_to_move -> size);
+
+    int traces_offset = (void*)buffer_to_move -> traces
+                        - (void*)buffer_to_move -> times;
+    // Update pointers to the (now moved) data structure.
+    buffer_to_move -> times = end_of_last_buffer;
+    buffer_to_move -> traces = end_of_last_buffer + traces_offset;
   }
-
-  // Copy the specified buffer to the end of all buffers.
-  sark_block_copy (end_of_last_buffer,
-                   buffer_to_move -> times,
-                   buffer_to_move -> size);
-
-  int traces_offset = (void*)buffer_to_move -> traces
-                      - (void*)buffer_to_move -> times;
  
-  buffer_to_move -> times = end_of_last_buffer;
-  buffer_to_move -> traces = end_of_last_buffer + traces_offset; 
+  // Move traces down to make space for new time entry.
+  for (int i = buffer_to_move -> count_minus_one; i >= 0; i--)
+    (buffer_to_move -> traces)[i+(sizeof(uint32_t)/sizeof(post_trace_t))] = (buffer_to_move -> traces)[i];
+
+  buffer_to_move -> traces = (void*)buffer_to_move -> traces + sizeof(uint32_t);
   buffer_to_move -> size += TRACE_SIZE;
 
-  // Move traces down to make space for new time entry.
-  if (sizeof(post_trace_t) != 0)
-    for (int i = buffer_to_move -> count_minus_one; i >= 0; i--)
-      (buffer_to_move -> traces)[i+1] = (buffer_to_move -> traces)[i];
-
-  buffer_to_move -> traces += sizeof(post_trace_t);
+  profiler_write_entry(PROFILER_EXIT | PROFILER_EXTEND_POST_BUFFER);
 
   return true;
 }
 
 /*
 
-Scan history traces and remove the ones that are older than the specified
-oldest_time.
+Scan history traces and remove traces that are older than the oldest specified time.
+The removal is done by moving the pointer to *times* structure down. After this, the
+compactor will recycled the trace that we do not point to anymore.
 
 */
 static inline scan_history_traces (vector_t *live_objects_vec, int oldest_time) {
 
-  log_debug("Recycling dead traces");
+  log_debug ("Recycling dead traces");
+ 
+  profiler_write_entry(PROFILER_ENTER | PROFILER_SCAN_POST_BUFFER); 
 
   for (int i = 0; i < live_objects_vec -> n_neurons; i++) {
     post_event_history_t* buffer = &(live_objects_vec -> buffers)[i];
     uint32_t recycled_traces = 0;
-    if (buffer -> count_minus_one == 0)
-      continue;
 
     for (int j = 0; j < buffer -> count_minus_one; j++) {
       if ((buffer -> times)[j] < oldest_time)
@@ -309,15 +317,19 @@ static inline scan_history_traces (vector_t *live_objects_vec, int oldest_time) 
     }
 
     // Increment *times* pointer to drop oldest traces
-    buffer -> times = (void*)buffer -> times + recycled_traces * 4;
+    buffer -> times = buffer -> times + recycled_traces;
 
     // Shift traces down in order to drop oldest trace entries that were recycled
     for (int i = 0; i <= buffer -> count_minus_one - recycled_traces; i++)
-      (buffer -> traces)[i] = (buffer -> traces)[i+recycled_traces];
+      (buffer -> traces)[i] =
+        (buffer -> traces)[i+recycled_traces];
 
     buffer -> size -= recycled_traces * TRACE_SIZE;
-    buffer -> count_minus_one = buffer -> count_minus_one - recycled_traces;
+    buffer -> count_minus_one -= recycled_traces;
+
   }
+
+  profiler_write_entry(PROFILER_EXIT | PROFILER_SCAN_POST_BUFFER);
 
 }
 

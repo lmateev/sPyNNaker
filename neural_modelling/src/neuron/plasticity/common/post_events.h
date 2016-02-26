@@ -12,7 +12,6 @@
 // Macros
 //---------------------------------------
 #define MAX_POST_SYNAPTIC_EVENTS 4
-#define TRACE_SIZE (sizeof(post_trace_t) + sizeof(uint32_t))
 
 //---------------------------------------
 // Structures
@@ -40,15 +39,22 @@ typedef struct {
   post_event_history_t* buffers;
 } vector_t;
 
-// Garbage collection include
-#include "spinn_gc.h"
-
+// Garbage collection variables.
 vector_t live_objects;
+uint16_t TRACE_SIZE = sizeof(post_trace_t) + sizeof(uint32_t);
+
+// Garbage collection include (Note: Leave it below preceding structs as they are used
+// inside sppinn_gc.h).
+#include "spinn_gc.h"
 
 //---------------------------------------
 // Inline functions
 //---------------------------------------
 static inline post_event_history_t *post_events_init_buffers(uint32_t n_neurons) {
+
+    // Make trace sizze word aligned.
+    while (TRACE_SIZE % 4 != 0)
+      TRACE_SIZE++;
 
     post_event_history_t *post_event_history =
         (post_event_history_t*) spin1_malloc(
@@ -215,7 +221,7 @@ static inline void post_events_add(uint32_t time, post_event_history_t *events,
     }
 
     bool shift_elements = false;
-    if (events -> count_minus_one >= MAX_POST_SYNAPTIC_EVENTS - 1)
+    if (events -> times + events -> count_minus_one + 1 == events -> traces)
        shift_elements = !extend_hist_trace_buffer(&live_objects, events, index);
 
     if (!shift_elements) {
