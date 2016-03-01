@@ -37,10 +37,10 @@ typedef struct {
   uint16_t size;                     // Overall size of all buffers
   uint32_t n_neurons;
   post_event_history_t* buffers;
-} vector_t;
+} post_event_buffer_t;
 
 // Garbage collection variables.
-vector_t live_objects;
+post_event_buffer_t post_event_buffers;
 uint16_t TRACE_SIZE = sizeof(post_trace_t) + sizeof(uint32_t);
 void* address_in_sdram; // Working space for compactor.
 
@@ -64,9 +64,9 @@ static inline post_event_history_t *post_events_init_buffers(uint32_t n_neurons)
     void* post_event_data =
             spin1_malloc(n_neurons * MAX_POST_SYNAPTIC_EVENTS * TRACE_SIZE);
 
-    live_objects.start_address = post_event_data;
-    live_objects.n_neurons = n_neurons;
-    live_objects.buffers = post_event_history;
+    post_event_buffers.start_address = post_event_data;
+    post_event_buffers.n_neurons = n_neurons;
+    post_event_buffers.buffers = post_event_history;
 
     // Set internal pointers of each buffer
     for (int i = 0; i < n_neurons; i++) {
@@ -80,10 +80,10 @@ static inline post_event_history_t *post_events_init_buffers(uint32_t n_neurons)
     // to be calculated properly when the rate of compaction will be known.
     block_t* extra_space = spin1_malloc(n_neurons * 2 * TRACE_SIZE);
 
-    live_objects.size = n_neurons * (MAX_POST_SYNAPTIC_EVENTS + 2) * TRACE_SIZE;
+    post_event_buffers.size = n_neurons * (MAX_POST_SYNAPTIC_EVENTS + 2) * TRACE_SIZE;
 
     // Allocate compactor working space in SDRAM
-    address_in_sdram = (int*) sark_xalloc (sv->sdram_heap, live_objects.size, 0, 1);
+    address_in_sdram = (int*) sark_xalloc (sv->sdram_heap, post_event_buffers.size, 0, 1);
 
     // Check allocations succeeded
     if (post_event_history == NULL || post_event_data == NULL || extra_space == NULL) {
@@ -238,13 +238,13 @@ static inline void post_events_add(uint32_t time, post_event_history_t *events,
     events_count++;
     if (events_count % 1000 == 0) {
        if (time > 500)
-           scan_history_traces (&live_objects, time-500);
-       compact_post_traces (&live_objects);
+           scan_history_traces (&post_event_buffers, time-500);
+       compact_post_traces (&post_event_buffers);
     }
 
     bool shift_elements = false;
     if (events -> times + events -> count_minus_one + 1 == events -> traces)
-       shift_elements = !extend_hist_trace_buffer(&live_objects, events, index);
+       shift_elements = !extend_hist_trace_buffer(&post_event_buffers, events, index);
 
     if (!shift_elements) {
 

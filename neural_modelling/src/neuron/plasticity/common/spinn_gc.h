@@ -166,7 +166,7 @@ copy all objects to sdram into  a single continuous block. Store new indices to
 a shadow_vec and interchange it with live_objects_vec at the end.
 
 */
-static inline void compact_post_traces (vector_t *live_objects_vec) {
+static inline void compact_post_traces (post_event_buffer_t *post_event_buffers) {
 
   log_debug ("Memory compaction starts");
   profiler_write_entry_disable_irq_fiq(PROFILER_ENTER | PROFILER_COMPACT_POST_TRACES);
@@ -177,35 +177,35 @@ static inline void compact_post_traces (vector_t *live_objects_vec) {
   int overall_size = 0;
 
   // Copy live objects to SDRAM in a consecutive block
-  for (int i = 0; i < live_objects_vec -> n_neurons; i++) {
+  for (int i = 0; i < post_event_buffers -> n_neurons; i++) {
     sark_block_copy (address_in_sdram,
-                     (live_objects_vec -> buffers)[i].times,
-                     (live_objects_vec -> buffers)[i].size);
+                     (post_event_buffers -> buffers)[i].times,
+                     (post_event_buffers -> buffers)[i].size);
 
-    overall_size += (live_objects_vec -> buffers)[i].size;
+    overall_size += (post_event_buffers -> buffers)[i].size;
 
-    int traces_offset = (void*)(live_objects_vec -> buffers)[i].traces
-                        - (void*)(live_objects_vec -> buffers)[i].times;
+    int traces_offset = (void*)(post_event_buffers -> buffers)[i].traces
+                        - (void*)(post_event_buffers -> buffers)[i].times;
 
     // Update references.
-    (live_objects_vec -> buffers)[i].times =
-      live_objects_vec -> start_address + ((int)address_in_sdram - (int)init_address);
-    (live_objects_vec -> buffers)[i].traces =
-      (void *)(live_objects_vec -> buffers)[i].times + traces_offset;
+    (post_event_buffers -> buffers)[i].times =
+      post_event_buffers -> start_address + ((int)address_in_sdram - (int)init_address);
+    (post_event_buffers -> buffers)[i].traces =
+      (void *)(post_event_buffers -> buffers)[i].times + traces_offset;
 
     address_in_sdram =
-      (int*) ((int)address_in_sdram + (live_objects_vec -> buffers)[i].size);
+      (int*) ((int)address_in_sdram + (post_event_buffers -> buffers)[i].size);
   }
 
   address_in_sdram = init_address;
 
   // Mark block in DTCM to detect when DMA completes.
-  int *addr = (int*)(live_objects_vec -> start_address + overall_size - 4);
+  int *addr = (int*)(post_event_buffers -> start_address + overall_size - 4);
   addr[0] = -1;
 
   spin1_dma_transfer (2,
                       init_address,
-                      (uint*)(live_objects_vec -> start_address),
+                      (uint*)(post_event_buffers -> start_address),
                       DMA_READ,
                       overall_size);
 
@@ -232,7 +232,7 @@ relocated buffer.
 Returns false if there is not enough space.
 
 */
-static inline bool extend_hist_trace_buffer (vector_t *live_objects_vec,
+static inline bool extend_hist_trace_buffer (post_event_buffer_t *post_event_buffers,
                                              post_event_history_t* buffer_to_move,
                                              uint32_t move_neuron_index) {
 
@@ -241,17 +241,17 @@ static inline bool extend_hist_trace_buffer (vector_t *live_objects_vec,
   profiler_write_entry(PROFILER_ENTER | PROFILER_EXTEND_POST_BUFFER);
 
   int last_buffer = 0;
-  for (int i = 1; i < live_objects_vec -> n_neurons; i++) {
-    if ((uint32_t)(live_objects_vec -> buffers)[i].times
-        > (uint32_t)(live_objects_vec -> buffers)[last_buffer].times)
+  for (int i = 1; i < post_event_buffers -> n_neurons; i++) {
+    if ((uint32_t)(post_event_buffers -> buffers)[i].times
+        > (uint32_t)(post_event_buffers -> buffers)[last_buffer].times)
       last_buffer = i;
   }
 
-  void* end_of_last_buffer = (void*)(live_objects_vec -> buffers)[last_buffer].times
-                                     + (live_objects_vec -> buffers)[last_buffer].size;
+  void* end_of_last_buffer = (void*)(post_event_buffers -> buffers)[last_buffer].times
+                                     + (post_event_buffers -> buffers)[last_buffer].size;
 
   // Check if there is enough space at the end of the heap to extend the buffer.
-  if (live_objects_vec -> start_address + live_objects_vec -> size
+  if (post_event_buffers -> start_address + post_event_buffers -> size
       <= (end_of_last_buffer + buffer_to_move -> size
           + TRACE_SIZE)) {
     log_debug("No space to extend");
@@ -291,14 +291,14 @@ The removal is done by moving the pointer to *times* structure down. After this,
 compactor will recycled the trace that we do not point to anymore.
 
 */
-static inline scan_history_traces (vector_t *live_objects_vec, int oldest_time) {
+static inline scan_history_traces (post_event_buffer_t *post_event_buffers, int oldest_time) {
 
   log_debug ("Recycling dead traces");
  
   profiler_write_entry(PROFILER_ENTER | PROFILER_SCAN_POST_BUFFER); 
 
-  for (int i = 0; i < live_objects_vec -> n_neurons; i++) {
-    post_event_history_t* buffer = &(live_objects_vec -> buffers)[i];
+  for (int i = 0; i < post_event_buffers -> n_neurons; i++) {
+    post_event_history_t* buffer = &(post_event_buffers -> buffers)[i];
     uint32_t recycled_traces = 0;
 
     for (int j = 0; j < buffer -> count_minus_one; j++) {
