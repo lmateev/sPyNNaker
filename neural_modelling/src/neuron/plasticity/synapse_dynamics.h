@@ -28,4 +28,8 @@ void synapse_dynamics_print_plastic_synapses(
 //! \return Nothing, this method does not return anything
 void synapse_dynamics_print_plastic_pre_synaptic_events();
 
+// Garbage collection routines
+void compact_buffers();
+void scan_traces(uint32_t time);
+
 #endif // _SYNAPSE_DYNAMICS_H_

@@ -218,6 +218,12 @@ void timer_callback(uint timer_count, uint unused) {
     synapses_do_timestep_update(time);
     neuron_do_timestep_update(time);
 
+#ifdef GARBAGE_COLLECTION
+    scan_traces(time);
+    if (time % 250 == 0)
+      compact_buffers();
+#endif
+
     // trigger buffering_out_mechanism
     if (recording_flags > 0) {
         recording_do_timestep_update(time);

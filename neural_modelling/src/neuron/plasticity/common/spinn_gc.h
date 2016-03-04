@@ -14,6 +14,16 @@
 #include "post_events.h"
 #include "../../profiler.h"
 
+typedef struct {
+  uint32_t start_address;            // Top of buffer structure
+  uint16_t size;                     // Overall size of all buffers
+  uint32_t n_neurons;
+  post_event_history_t* buffers;
+} post_event_buffer_t;
+
+// Garbage collection variables.
+post_event_buffer_t post_event_buffers;
+void* address_in_sdram; // Working space for compactor.
 
 //------------------------------------------------------------------------------
 // Various debugging routines mainly to print out memory contents or

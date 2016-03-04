@@ -32,17 +32,7 @@ typedef struct {
     uint32_t num_events;
 } post_event_window_t;
 
-typedef struct {
-  uint32_t start_address;            // Top of buffer structure
-  uint16_t size;                     // Overall size of all buffers
-  uint32_t n_neurons;
-  post_event_history_t* buffers;
-} post_event_buffer_t;
-
-// Garbage collection variables.
-post_event_buffer_t post_event_buffers;
 uint16_t TRACE_SIZE = sizeof(post_trace_t) + sizeof(uint32_t);
-void* address_in_sdram; // Working space for compactor.
 
 // Garbage collection include (Note: Leave it below preceding structs as they are used
 // inside sppinn_gc.h).
@@ -53,7 +43,7 @@ void* address_in_sdram; // Working space for compactor.
 //---------------------------------------
 static inline post_event_history_t *post_events_init_buffers(uint32_t n_neurons) {
 
-    // Make trace sizze word aligned.
+    // Make trace size word aligned.
     while (TRACE_SIZE % 4 != 0)
       TRACE_SIZE++;
 
@@ -212,36 +202,9 @@ static inline post_event_window_t post_events_next_delayed(
 }
 
 //---------------------------------------
-static inline void print_times_traces(post_event_history_t* events, uint32_t tag) {
-//  log_info("Count %d Size %d", events -> count_minus_one, events -> size);
-  bool print = false;
-  for (int i = 0; i <= events->count_minus_one; i++)
-    if (events->times[i] > 10000) {
-      print = true;
-      break;
-    }
-  if (print) {
-  log_info("%d", tag);
-  for (int i = 0; i <= events->count_minus_one; i++) {
-      log_info("T %d Tr %d T_a %x Tr_a: %x %d", events -> times[i],
-             events -> traces[i], events -> times, events -> traces, events -> count_minus_one);
-      spinn_print_mem (events->times, (void*)events->times+events->size);
-  }
-  }
-}
-
-static int events_count = 0;
 static inline void post_events_add(uint32_t time, post_event_history_t *events,
                                    post_trace_t trace, uint32_t index) {
  
-    // Just a placeholder: Scan for garbage and compact every 1000 events.
-    events_count++;
-    if (events_count % 1000 == 0) {
-       if (time > 500)
-           scan_history_traces (&post_event_buffers, time-500);
-       compact_post_traces (&post_event_buffers);
-    }
-
     bool shift_elements = false;
     if (events -> times + events -> count_minus_one + 1 == events -> traces)
        shift_elements = !extend_hist_trace_buffer(&post_event_buffers, events, index);
@@ -266,9 +229,6 @@ static inline void post_events_add(uint32_t time, post_event_history_t *events,
         events->traces[events->count_minus_one] = trace;
 
     }
-    if( events->count_minus_one > 150)
-      log_info("WARNING");
-
 }
 
 #endif  // _POST_EVENTS_H_

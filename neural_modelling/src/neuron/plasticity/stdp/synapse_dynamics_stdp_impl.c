@@ -290,3 +290,15 @@ void synapse_dynamics_print_plastic_pre_synaptic_events(){
             num_plastic_pre_synaptic_events);
 #endif  // SYNAPSE_BENCHMARK
 }
+
+// Garbage collection routines
+// These are added here because we want them visible in c_main but
+// also they use such types like post_trace_t that are accessible only
+// at this point.
+void compact_buffers() {
+    compact_post_traces (&post_event_buffers);
+}
+
+void scan_traces(uint32_t time) {
+    scan_history_traces (&post_event_buffers, time-500);
+}
