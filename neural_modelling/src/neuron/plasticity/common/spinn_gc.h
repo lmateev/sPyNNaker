@@ -8,6 +8,8 @@
 //
 //------------------------------------------------------------------------------
 
+#define COMPACTOR_FRAGMENTATION_FACTOR 4
+
 #ifndef SPINN_GC
 #define SPINN_GC
 
@@ -172,50 +174,72 @@ static inline void sark_block_copy (int dest, const int src, uint n) {
 /*
 
 Given a structure of history traces and a vector of live objects of each neuron
-copy all objects to sdram into  a single continuous block. Store new indices to
-a shadow_vec and interchange it with live_objects_vec at the end.
+copy all objects to sdram into a single continuous block and copy back to DTCM
+in order to compact. The compaction is each time working on some part of the
+memory region and the region is moving after each compaction invocation. The region
+eventually returns to the initial address and the cycle repeats.
+The size of regions to compact is controlled by macro COMPACTOR_FRAGMENTATION_FACTOR.
 
 */
 static inline void compact_post_traces (post_event_buffer_t *post_event_buffers) {
 
-  log_debug ("Memory compaction starts");
+  static uint32_t start_addr = 0;
+  static uint32_t end_addr = 0;
+  static uint32_t end_of_last_compaction_address = 0;
+
+  log_info ("Memory compaction starts");
   profiler_write_entry_disable_irq_fiq(PROFILER_ENTER | PROFILER_COMPACT_POST_TRACES);
 
-  log_debug ("Address in sdram allocated: %x", address_in_sdram);
+  // Define region which compactor will work on in this invocation.
+  if (start_addr == 0 || end_addr >= post_event_buffers -> start_address
+                                    + post_event_buffers -> size - 4) {
+    log_info("Compacting restarts");
+    start_addr = post_event_buffers -> start_address;
+    end_addr = post_event_buffers -> start_address
+               + (post_event_buffers -> size / COMPACTOR_FRAGMENTATION_FACTOR) - 4;
+    end_of_last_compaction_address = start_addr;
+  }
+  else {
+    start_addr += post_event_buffers -> size / COMPACTOR_FRAGMENTATION_FACTOR;
+    end_addr += post_event_buffers -> size / COMPACTOR_FRAGMENTATION_FACTOR;
+  }
 
   int *init_address = address_in_sdram;
   int overall_size = 0;
 
   // Copy live objects to SDRAM in a consecutive block
   for (int i = 0; i < post_event_buffers -> n_neurons; i++) {
-    sark_block_copy (address_in_sdram,
-                     (post_event_buffers -> buffers)[i].times,
-                     (post_event_buffers -> buffers)[i].size);
+    if ((post_event_buffers -> buffers)[i].times >= start_addr
+        & (post_event_buffers -> buffers)[i].times <= end_addr) {
+	    sark_block_copy (address_in_sdram,
+			     (post_event_buffers -> buffers)[i].times,
+			     (post_event_buffers -> buffers)[i].size);
 
-    overall_size += (post_event_buffers -> buffers)[i].size;
+	    overall_size += (post_event_buffers -> buffers)[i].size;
 
-    int traces_offset = (void*)(post_event_buffers -> buffers)[i].traces
-                        - (void*)(post_event_buffers -> buffers)[i].times;
+	    int traces_offset = (void*)(post_event_buffers -> buffers)[i].traces
+				- (void*)(post_event_buffers -> buffers)[i].times;
 
-    // Update references.
-    (post_event_buffers -> buffers)[i].times =
-      post_event_buffers -> start_address + ((int)address_in_sdram - (int)init_address);
-    (post_event_buffers -> buffers)[i].traces =
-      (void *)(post_event_buffers -> buffers)[i].times + traces_offset;
+	    // Update references.
+	    (post_event_buffers -> buffers)[i].times =
+	      end_of_last_compaction_address + ((int)address_in_sdram - (int)init_address);
+	    (post_event_buffers -> buffers)[i].traces =
+	      (void *)(post_event_buffers -> buffers)[i].times + traces_offset;
 
-    address_in_sdram =
-      (int*) ((int)address_in_sdram + (post_event_buffers -> buffers)[i].size);
+	    address_in_sdram =
+	      (int*) ((int)address_in_sdram + (post_event_buffers -> buffers)[i].size);
+    }
   }
 
   address_in_sdram = init_address;
 
   // Mark block in DTCM to detect when DMA completes.
-  int *addr = (int*)(post_event_buffers -> start_address + overall_size - 4);
+  int *addr = (int*)(end_of_last_compaction_address + overall_size - 4);
   addr[0] = -1;
 
   spin1_dma_transfer (2,
                       init_address,
-                      (uint*)(post_event_buffers -> start_address),
+                      end_of_last_compaction_address,
                       DMA_READ,
                       overall_size);
 
@@ -229,6 +253,8 @@ static inline void compact_post_traces (post_event_buffer_t *post_event_buffers)
     :: [mark] "m" (addr)
     : "cc", "r3"
   );
+
+  end_of_last_compaction_address += overall_size;
 
   profiler_write_entry_disable_irq_fiq(PROFILER_EXIT | PROFILER_COMPACT_POST_TRACES);
 }

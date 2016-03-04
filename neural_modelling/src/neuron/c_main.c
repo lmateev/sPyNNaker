@@ -220,7 +220,7 @@ void timer_callback(uint timer_count, uint unused) {
 
 #ifdef GARBAGE_COLLECTION
     scan_traces(time);
-    if (time % 250 == 0)
+    if (time % 50 == 0)
       compact_buffers();
 #endif
 
