@@ -235,9 +235,17 @@ static inline void post_events_add(uint32_t time, post_event_history_t *events,
 
     }
 
-    // Add buffer to specific generation if this is the first trace added.
-    if (events -> count_minus_one == 1)
-      generations[(int)ceil(time/generation_step)].buffers_in_generation[generations[(int)ceil(time/generation_step)].buffers_added++] = events;
+//    log_info("Adding. Count %d", events -> count_minus_one);
+
+    // Add buffer to specific generation if this is the first trace added
+    // after the initial trace.
+    if (events -> count_minus_one == 1 && events -> times[0] == 0) {
+//      log_info("Addingdasdsd. Count %d", events -> count_minus_one);
+      uint32_t generation_number = (int)ceil(time/generation_step);
+      generation_t* generation_to_add_to = &generations[generation_number];
+      uint32_t index = generations[generation_number].buffers_added++;
+      generation_to_add_to -> buffers_in_generation[index] = events;
+    }
 }
 
 #endif  // _POST_EVENTS_H_
