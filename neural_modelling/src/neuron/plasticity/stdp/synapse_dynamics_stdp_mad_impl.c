@@ -292,8 +292,7 @@ void synapse_dynamics_process_post_synaptic_event(
     const post_trace_t last_post_trace =
         history->traces[history->count_minus_one];
     post_events_add(time, history, timing_add_post_spike(time, last_post_time,
-                                                         last_post_trace),
-                    neuron_index);
+                                                         last_post_trace));
 }
 
 input_t synapse_dynamics_get_intrinsic_bias(uint32_t time, index_t neuron_index) {

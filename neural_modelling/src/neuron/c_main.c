@@ -181,6 +181,7 @@ static bool initialise(uint32_t *timer_period) {
 //! \param[in] unused unused parameter kept for API consistency
 //! \return None
 void timer_callback(uint timer_count, uint unused) {
+    profiler_write_entry(PROFILER_ENTER | PROFILER_TIMER);
     use(timer_count);
     use(unused);
 
@@ -197,12 +198,12 @@ void timer_callback(uint timer_count, uint unused) {
 
         spike_processing_print_buffer_overflows();
 
+        profiler_write_entry(PROFILER_EXIT | PROFILER_TIMER);
         // Finalise any recordings that are in progress, writing back the final
         // amounts of samples recorded to SDRAM
         if (recording_flags > 0) {
             recording_finalise();
         }
-
         profiler_finalise();
 
         // falls into the pause resume mode of operating
@@ -220,15 +221,15 @@ void timer_callback(uint timer_count, uint unused) {
 
 #ifdef GARBAGE_COLLECTION
     scan_traces(time);
-    if (time % 50 == 0)
+    if (time % 100 == 0)
       compact_buffers();
 #endif
 
+    profiler_write_entry(PROFILER_EXIT | PROFILER_TIMER);
     // trigger buffering_out_mechanism
     if (recording_flags > 0) {
         recording_do_timestep_update(time);
     }
- 
 }
 
 //! \brief The entry point for this model.

@@ -12,6 +12,10 @@
 // Macros
 //---------------------------------------
 #define MAX_POST_SYNAPTIC_EVENTS 4
+// This macro defines how much extra history trace space we allocate. However,
+// extra space is not tied to particular neurons and therefore any neuron can steal
+// space from other neurons that do not use their extra space.
+#define EXTRA_HISTORY_TRACE_SPACE_FACTOR 3
 
 //---------------------------------------
 // Structures
@@ -57,6 +61,7 @@ static inline post_event_history_t *post_events_init_buffers(uint32_t n_neurons)
     post_event_buffers.start_address = post_event_data;
     post_event_buffers.n_neurons = n_neurons;
     post_event_buffers.buffers = post_event_history;
+    post_event_buffers.end_of_last_buffer = post_event_data + n_neurons * MAX_POST_SYNAPTIC_EVENTS * TRACE_SIZE;
 
     // Set internal pointers of each buffer
     for (int i = 0; i < n_neurons; i++) {
@@ -68,9 +73,9 @@ static inline post_event_history_t *post_events_init_buffers(uint32_t n_neurons)
     // Allocate extra space below post event data block for extensions.
     // **NOTE: For now giving 2 extra traces for each neuron but this needs
     // to be calculated properly when the rate of compaction will be known.
-    block_t* extra_space = spin1_malloc(n_neurons * 2 * TRACE_SIZE);
+    block_t* extra_space = spin1_malloc(n_neurons * EXTRA_HISTORY_TRACE_SPACE_FACTOR * TRACE_SIZE);
 
-    post_event_buffers.size = n_neurons * (MAX_POST_SYNAPTIC_EVENTS + 2) * TRACE_SIZE;
+    post_event_buffers.size = n_neurons * (MAX_POST_SYNAPTIC_EVENTS + EXTRA_HISTORY_TRACE_SPACE_FACTOR) * TRACE_SIZE;
 
     // Allocate compactor working space in SDRAM
     address_in_sdram = (int*) sark_xalloc (sv->sdram_heap, post_event_buffers.size, 0, 1);
@@ -203,11 +208,11 @@ static inline post_event_window_t post_events_next_delayed(
 
 //---------------------------------------
 static inline void post_events_add(uint32_t time, post_event_history_t *events,
-                                   post_trace_t trace, uint32_t index) {
+                                   post_trace_t trace) {
  
     bool shift_elements = false;
     if (events -> times + events -> count_minus_one + 1 == events -> traces)
-       shift_elements = !extend_hist_trace_buffer(&post_event_buffers, events, index);
+       shift_elements = !extend_hist_trace_buffer(&post_event_buffers, events);
 
     if (!shift_elements) {
 

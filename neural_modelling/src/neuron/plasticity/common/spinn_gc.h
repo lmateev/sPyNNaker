@@ -20,6 +20,7 @@ typedef struct {
   uint32_t start_address;            // Top of buffer structure
   uint16_t size;                     // Overall size of all buffers
   uint32_t n_neurons;
+  uint32_t end_of_last_buffer;
   post_event_history_t* buffers;
 } post_event_buffer_t;
 
@@ -187,16 +188,13 @@ static inline void compact_post_traces (post_event_buffer_t *post_event_buffers)
   static uint32_t end_addr = 0;
   static uint32_t end_of_last_compaction_address = 0;
 
-  log_info ("Memory compaction starts");
   profiler_write_entry_disable_irq_fiq(PROFILER_ENTER | PROFILER_COMPACT_POST_TRACES);
 
   // Define region which compactor will work on in this invocation.
-  if (start_addr == 0 || end_addr >= post_event_buffers -> start_address
-                                    + post_event_buffers -> size - 4) {
-    log_info("Compacting restarts");
+  if (start_addr == 0) {
     start_addr = post_event_buffers -> start_address;
     end_addr = post_event_buffers -> start_address
-               + (post_event_buffers -> size / COMPACTOR_FRAGMENTATION_FACTOR) - 4;
+               + (post_event_buffers -> size / COMPACTOR_FRAGMENTATION_FACTOR);
     end_of_last_compaction_address = start_addr;
   }
   else {
@@ -215,16 +213,15 @@ static inline void compact_post_traces (post_event_buffer_t *post_event_buffers)
 			     (post_event_buffers -> buffers)[i].times,
 			     (post_event_buffers -> buffers)[i].size);
 
-	    overall_size += (post_event_buffers -> buffers)[i].size;
-
 	    int traces_offset = (void*)(post_event_buffers -> buffers)[i].traces
 				- (void*)(post_event_buffers -> buffers)[i].times;
 
 	    // Update references.
 	    (post_event_buffers -> buffers)[i].times =
-	      end_of_last_compaction_address + ((int)address_in_sdram - (int)init_address);
+	      end_of_last_compaction_address + overall_size;
 	    (post_event_buffers -> buffers)[i].traces =
 	      (void *)(post_event_buffers -> buffers)[i].times + traces_offset;
+	    overall_size += (post_event_buffers -> buffers)[i].size;
 
 	    address_in_sdram =
 	      (int*) ((int)address_in_sdram + (post_event_buffers -> buffers)[i].size);
@@ -256,6 +253,12 @@ static inline void compact_post_traces (post_event_buffer_t *post_event_buffers)
 
   end_of_last_compaction_address += overall_size;
 
+  // Finish compaction if we have already moved last buffer.
+  if (end_addr >= post_event_buffers -> end_of_last_buffer) {
+    post_event_buffers -> end_of_last_buffer = end_of_last_compaction_address;
+    start_addr = 0;
+  }
+
   profiler_write_entry_disable_irq_fiq(PROFILER_EXIT | PROFILER_COMPACT_POST_TRACES);
 }
 
@@ -269,51 +272,39 @@ Returns false if there is not enough space.
 
 */
 static inline bool extend_hist_trace_buffer (post_event_buffer_t *post_event_buffers,
-                                             post_event_history_t* buffer_to_move,
-                                             uint32_t move_neuron_index) {
-
-  log_debug ("Post trace buffer extension starts");
+                                             post_event_history_t* buffer_to_move) {
 
   profiler_write_entry(PROFILER_ENTER | PROFILER_EXTEND_POST_BUFFER);
 
-  int last_buffer = 0;
-  for (int i = 1; i < post_event_buffers -> n_neurons; i++) {
-    if ((uint32_t)(post_event_buffers -> buffers)[i].times
-        > (uint32_t)(post_event_buffers -> buffers)[last_buffer].times)
-      last_buffer = i;
-  }
-
-  void* end_of_last_buffer = (void*)(post_event_buffers -> buffers)[last_buffer].times
-                                     + (post_event_buffers -> buffers)[last_buffer].size;
-
   // Check if there is enough space at the end of the heap to extend the buffer.
   if (post_event_buffers -> start_address + post_event_buffers -> size
-      <= (end_of_last_buffer + buffer_to_move -> size
+      <= (post_event_buffers -> end_of_last_buffer + buffer_to_move -> size
           + TRACE_SIZE)) {
-    log_debug("No space to extend");
     profiler_write_entry_disable_irq_fiq(PROFILER_EXIT | PROFILER_EXTEND_POST_BUFFER);
     return false;
   }
 
-  if (move_neuron_index != last_buffer) {
+  if ((void*)buffer_to_move -> times + buffer_to_move -> size != post_event_buffers -> end_of_last_buffer) {
     // Copy the specified buffer to the end of all buffers.
-    sark_block_copy (end_of_last_buffer,
+    sark_block_copy (post_event_buffers -> end_of_last_buffer,
                      buffer_to_move -> times,
                      buffer_to_move -> size);
 
     int traces_offset = (void*)buffer_to_move -> traces
                         - (void*)buffer_to_move -> times;
     // Update pointers to the (now moved) data structure.
-    buffer_to_move -> times = end_of_last_buffer;
-    buffer_to_move -> traces = end_of_last_buffer + traces_offset;
+    buffer_to_move -> times = post_event_buffers -> end_of_last_buffer;
+    buffer_to_move -> traces = post_event_buffers -> end_of_last_buffer + traces_offset;
   }
- 
-  // Move traces down to make space for new time entry.
-  for (int i = buffer_to_move -> count_minus_one; i >= 0; i--)
-    (buffer_to_move -> traces)[i+(sizeof(uint32_t)/sizeof(post_trace_t))] = (buffer_to_move -> traces)[i];
+
+  if (sizeof(post_trace_t) != 0)
+    // Move traces down to make space for new time entry.
+    for (int i = buffer_to_move -> count_minus_one; i >= 0; i--)
+      (buffer_to_move -> traces)[i+(sizeof(uint32_t)/sizeof(post_trace_t))] = (buffer_to_move -> traces)[i];
 
   buffer_to_move -> traces = (void*)buffer_to_move -> traces + sizeof(uint32_t);
   buffer_to_move -> size += TRACE_SIZE;
+  post_event_buffers -> end_of_last_buffer = (void*)buffer_to_move -> times + buffer_to_move -> size;
 
   profiler_write_entry(PROFILER_EXIT | PROFILER_EXTEND_POST_BUFFER);
 
@@ -329,9 +320,7 @@ compactor will recycled the trace that we do not point to anymore.
 */
 static inline scan_history_traces (post_event_buffer_t *post_event_buffers, int oldest_time) {
 
-  log_debug ("Recycling dead traces");
- 
-  profiler_write_entry(PROFILER_ENTER | PROFILER_SCAN_POST_BUFFER); 
+  profiler_write_entry(PROFILER_ENTER | PROFILER_SCAN_POST_BUFFER);
 
   for (int i = 0; i < post_event_buffers -> n_neurons; i++) {
     post_event_history_t* buffer = &(post_event_buffers -> buffers)[i];
@@ -343,6 +332,9 @@ static inline scan_history_traces (post_event_buffer_t *post_event_buffers, int 
       else 
         break;
     }
+
+    if (recycled_traces == 0)
+      continue;
 
     // Increment *times* pointer to drop oldest traces
     buffer -> times = buffer -> times + recycled_traces;
