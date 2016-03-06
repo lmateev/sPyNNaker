@@ -56,6 +56,6 @@ void synapse_dynamics_print_plastic_pre_synaptic_events(){
 void compact_buffers(){
 }
 
-void scan_traces(uint32_t time) {
-    use(time);
+void scan_traces(uint32_t oldest_time) {
+    use(oldest_time);
 }

@@ -298,6 +298,6 @@ void compact_buffers() {
     compact_post_traces (&post_event_buffers);
 }
 
-void scan_traces(uint32_t time) {
-    scan_history_traces (&post_event_buffers, time-500);
+void scan_traces(uint32_t oldest_time) {
+    scan_history_traces (&post_event_buffers, oldest_time);
 }

@@ -220,7 +220,9 @@ void timer_callback(uint timer_count, uint unused) {
     neuron_do_timestep_update(time);
 
 #ifdef GARBAGE_COLLECTION
-    scan_traces(time);
+    if (time > 500)
+      if (time % 1 == 0)
+        scan_traces(time - 500);
     if (time % 100 == 0)
       compact_buffers();
 #endif
