@@ -31,5 +31,6 @@ void synapse_dynamics_print_plastic_pre_synaptic_events();
 // Garbage collection routines
 void compact_buffers();
 void scan_traces(uint32_t oldest_time);
+bool init_generations(uint32_t simulation_ticks);
 
 #endif // _SYNAPSE_DYNAMICS_H_

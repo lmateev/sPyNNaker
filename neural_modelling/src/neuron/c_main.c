@@ -171,6 +171,11 @@ static bool initialise(uint32_t *timer_period) {
         return false;
     }
 
+#ifdef GARBAGE_COLLECTION
+    if (!init_generations(simulation_ticks))
+      return false;
+#endif
+
     if (!spike_processing_initialise(row_max_n_words, MC, SDP_AND_DMA_AND_USER,
                                      SDP_AND_DMA_AND_USER)) {
         return false;

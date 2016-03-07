@@ -59,3 +59,7 @@ void compact_buffers(){
 void scan_traces(uint32_t oldest_time) {
     use(oldest_time);
 }
+
+bool init_generations(uint32_t simulation_ticks) {
+    use(simulation_ticks);
+}

@@ -234,6 +234,10 @@ static inline void post_events_add(uint32_t time, post_event_history_t *events,
         events->traces[events->count_minus_one] = trace;
 
     }
+
+    // Add buffer to specific generation if this is the first trace added.
+    if (events -> count_minus_one == 1)
+      generations[(int)ceil(time/generation_step)].buffers_in_generation[generations[(int)ceil(time/generation_step)].buffers_added++] = events;
 }
 
 #endif  // _POST_EVENTS_H_

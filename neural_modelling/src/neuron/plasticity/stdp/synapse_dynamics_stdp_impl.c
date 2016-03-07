@@ -301,3 +301,7 @@ void compact_buffers() {
 void scan_traces(uint32_t oldest_time) {
     scan_history_traces (&post_event_buffers, oldest_time);
 }
+
+bool init_generations(uint32_t simulation_ticks) {
+    initialize_generations(simulation_ticks);
+}
