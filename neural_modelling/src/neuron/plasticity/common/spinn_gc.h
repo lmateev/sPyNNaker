@@ -9,7 +9,7 @@
 //------------------------------------------------------------------------------
 
 #define COMPACTOR_FRAGMENTATION_FACTOR 4
-#define GENERATIONS_TO_USE 8
+#define NUMBER_OF_GENERATIONS_TO_USE 8
 
 #ifndef SPINN_GC
 #define SPINN_GC
@@ -195,7 +195,7 @@ static inline void compact_post_traces (post_event_buffer_t *post_event_buffers)
   static uint32_t end_addr = 0;
   static uint32_t end_of_last_compaction_address = 0;
 
-  profiler_write_entry_disable_irq_fiq(PROFILER_ENTER | PROFILER_COMPACT_POST_TRACES);
+  profiler_write_entry_disable_irq_fiq (PROFILER_ENTER | PROFILER_COMPACT_POST_TRACES);
 
   // Define region which compactor will work on in this invocation.
   if (start_addr == 0) {
@@ -266,7 +266,8 @@ static inline void compact_post_traces (post_event_buffer_t *post_event_buffers)
     start_addr = 0;
   }
 
-  profiler_write_entry_disable_irq_fiq(PROFILER_EXIT | PROFILER_COMPACT_POST_TRACES);
+  profiler_write_entry_disable_irq_fiq (PROFILER_EXIT | PROFILER_COMPACT_POST_TRACES);
+
 }
 
 /*
@@ -281,13 +282,13 @@ Returns false if there is not enough space.
 static inline bool extend_hist_trace_buffer (post_event_buffer_t *post_event_buffers,
                                              post_event_history_t* buffer_to_move) {
 
-  profiler_write_entry(PROFILER_ENTER | PROFILER_EXTEND_POST_BUFFER);
+  profiler_write_entry (PROFILER_ENTER | PROFILER_EXTEND_POST_BUFFER);
 
   // Check if there is enough space at the end of the heap to extend the buffer.
   if (post_event_buffers -> start_address + post_event_buffers -> size
       <= (post_event_buffers -> end_of_last_buffer + buffer_to_move -> size
           + TRACE_SIZE)) {
-    profiler_write_entry_disable_irq_fiq(PROFILER_EXIT | PROFILER_EXTEND_POST_BUFFER);
+    profiler_write_entry_disable_irq_fiq (PROFILER_EXIT | PROFILER_EXTEND_POST_BUFFER);
     return false;
   }
 
@@ -305,19 +306,20 @@ static inline bool extend_hist_trace_buffer (post_event_buffer_t *post_event_buf
     buffer_to_move -> traces = post_event_buffers -> end_of_last_buffer + traces_offset;
   }
 
-  if (sizeof(post_trace_t) != 0)
+  if (sizeof (post_trace_t) != 0)
     // Move traces down to make space for new time entry.
     for (int i = buffer_to_move -> count_minus_one; i >= 0; i--)
-      (buffer_to_move -> traces)[i+(sizeof(uint32_t)/sizeof(post_trace_t))] = (buffer_to_move -> traces)[i];
+      (buffer_to_move -> traces)[i+(sizeof (uint32_t)/sizeof (post_trace_t))] = (buffer_to_move -> traces)[i];
 
   // Update buffer pointers and size
-  buffer_to_move -> traces = (void*)buffer_to_move -> traces + sizeof(uint32_t);
+  buffer_to_move -> traces = (void*)buffer_to_move -> traces + sizeof (uint32_t);
   buffer_to_move -> size += TRACE_SIZE;
   post_event_buffers -> end_of_last_buffer = (void*)buffer_to_move -> times + buffer_to_move -> size;
 
   profiler_write_entry(PROFILER_EXIT | PROFILER_EXTEND_POST_BUFFER);
 
   return true;
+
 }
 
 /*
@@ -329,7 +331,7 @@ compactor will recycle the trace that we do not point to anymore.
 */
 static inline scan_history_traces (post_event_buffer_t *post_event_buffers, int oldest_time) {
 
-  profiler_write_entry(PROFILER_ENTER | PROFILER_SCAN_POST_BUFFER);
+  profiler_write_entry (PROFILER_ENTER | PROFILER_SCAN_POST_BUFFER);
   generation_t* current_generation_to_collect = &generations[(int)ceil(oldest_time / generation_step)];
 
   for (int i = 0; i < current_generation_to_collect -> buffers_added; i++) {
@@ -357,10 +359,10 @@ static inline scan_history_traces (post_event_buffer_t *post_event_buffers, int 
     buffer -> size -= recycled_traces * TRACE_SIZE;
     buffer -> count_minus_one -= recycled_traces;
 
-    // Move buffer to new generation
+    // Move buffer to a new generation
     generation_t* generation_to_move_to = &generations[(int)ceil(buffer -> times[0]/generation_step)];
     generation_to_move_to -> buffers_in_generation[generation_to_move_to -> buffers_added++] = buffer;
-    // Remove from this generation
+    // Remove buffer from this generation
     for (int j = i; j <= current_generation_to_collect -> buffers_added - recycled_traces; j++)
       current_generation_to_collect -> buffers_in_generation[j] =
         current_generation_to_collect -> buffers_in_generation[j+1];
@@ -368,17 +370,25 @@ static inline scan_history_traces (post_event_buffer_t *post_event_buffers, int 
 
   }
 
-  profiler_write_entry(PROFILER_EXIT | PROFILER_SCAN_POST_BUFFER);
+  profiler_write_entry (PROFILER_EXIT | PROFILER_SCAN_POST_BUFFER);
 
 }
 
-static inline bool initialize_generations(uint32_t simulation_ticks) {
-  generation_step = simulation_ticks / GENERATIONS_TO_USE;
-  log_info("Generation step %d", generation_step);
+/*
+  Initialize the sizes and storage of generational garbage collector
+  generations.
+*/
+static inline bool initialize_generations (uint32_t simulation_ticks) {
+
+  // Calculate size of generations.  
+  generation_step = simulation_ticks / NUMBER_OF_GENERATIONS_TO_USE;
+
   // Allocate space for generations
-  generations = spin1_malloc(GENERATIONS_TO_USE * sizeof(generation_t));
-  for (int i = 0; i < GENERATIONS_TO_USE; i++) {
-    generations[i].buffers_in_generation = spin1_malloc(post_event_buffers.n_neurons * sizeof(uint32_t));
+  generations = spin1_malloc(NUMBER_OF_GENERATIONS_TO_USE * sizeof (generation_t));
+  for (int i = 0; i < NUMBER_OF_GENERATIONS_TO_USE; i++) {
+    generations[i].buffers_in_generation = 
+      spin1_malloc(post_event_buffers.n_neurons * sizeof (uint32_t));
+    
     if (generations[i].buffers_in_generation == NULL) {
       log_error("Not enough memory for generation structures");
       return false;
@@ -386,6 +396,7 @@ static inline bool initialize_generations(uint32_t simulation_ticks) {
     generations[i].buffers_added = 0;
   }
   return true;
+
 }
 
 //------------------------------------------------------------------------------
