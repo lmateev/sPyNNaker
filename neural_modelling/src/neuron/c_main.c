@@ -56,6 +56,15 @@ typedef enum callback_priorities{
 //! The number of regions that are to be used for recording
 #define NUMBER_OF_REGIONS_TO_RECORD 3
 
+// Garbage collection macros
+// -----
+// Collect everything older than current_time - OLDEST_TRACE_WINDOW
+#define OLDEST_TRACE_WINDOW 500
+// Scanning period in clock ticks
+#define SCAN_PERIOD 1
+// Compaction period in clock ticks
+#define COMPACTION_PERIOD 100
+
 // Globals
 
 //! the current timer tick value TODO this might be able to be removed with
@@ -220,10 +229,10 @@ void timer_callback(uint timer_count, uint unused) {
     neuron_do_timestep_update(time);
 
 #ifdef GARBAGE_COLLECTION
-    if (time > 500)
-      if (time % 1 == 0)
-        scan_traces(time - 500);
-    if (time % 100 == 0)
+    if (time > OLDEST_TRACE_WINDOW)
+      if (time % SCAN_PERIOD == 0)
+        scan_traces(time - OLDEST_TRACE_WINDOW);
+    if (time % COMPACTION_PERIOD == 0)
       compact_buffers();
 #endif
 
