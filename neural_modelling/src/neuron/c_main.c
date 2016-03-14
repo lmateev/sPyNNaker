@@ -229,11 +229,13 @@ void timer_callback(uint timer_count, uint unused) {
     neuron_do_timestep_update(time);
 
 #ifdef GARBAGE_COLLECTION
+    profiler_write_entry(PROFILER_ENTER | PROFILER_GARBAGE_COLLECTION);
     if (time > OLDEST_TRACE_WINDOW)
       if (time % SCAN_PERIOD == 0)
         scan_traces(time - OLDEST_TRACE_WINDOW);
     if (time % COMPACTION_PERIOD == 0)
       compact_buffers();
+    profiler_write_entry(PROFILER_EXIT | PROFILER_GARBAGE_COLLECTION);
 #endif
 
     profiler_write_entry(PROFILER_EXIT | PROFILER_TIMER);

@@ -9,7 +9,8 @@ default_tag_labels = ["Timer",
                       "Process fixed synapses", "Process plastic synapses",
                       "Compactor",
                       "Buffer extender",
-                      "Scanner"]
+                      "Scanner",
+                      "Overall garbage collection"]
 
 def print_summary(profiling_data, duration):
     """
