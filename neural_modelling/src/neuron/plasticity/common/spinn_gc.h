@@ -9,6 +9,7 @@
 //------------------------------------------------------------------------------
 
 #define COMPACTOR_FRAGMENTATION_FACTOR 4
+#define GENERATIONS_TO_USE 8
 
 #ifndef SPINN_GC
 #define SPINN_GC
@@ -24,9 +25,8 @@ typedef struct {
   post_event_history_t* buffers;
 } post_event_buffer_t;
 
-// Garbage collection variables.
 post_event_buffer_t post_event_buffers;
-void* address_in_sdram; // Working space for compactor.
+void* address_in_sdram;              // Working space for compactor.
 
 //------------------------------------------------------------------------------
 // Various debugging routines mainly to print out memory contents or
@@ -284,7 +284,8 @@ static inline bool extend_hist_trace_buffer (post_event_buffer_t *post_event_buf
     return false;
   }
 
-  if ((void*)buffer_to_move -> times + buffer_to_move -> size != post_event_buffers -> end_of_last_buffer) {
+  if ((void*)buffer_to_move -> times + buffer_to_move -> size !=
+      post_event_buffers -> end_of_last_buffer) {
     // Copy the specified buffer to the end of all buffers.
     sark_block_copy (post_event_buffers -> end_of_last_buffer,
                      buffer_to_move -> times,
@@ -302,6 +303,7 @@ static inline bool extend_hist_trace_buffer (post_event_buffer_t *post_event_buf
     for (int i = buffer_to_move -> count_minus_one; i >= 0; i--)
       (buffer_to_move -> traces)[i+(sizeof(uint32_t)/sizeof(post_trace_t))] = (buffer_to_move -> traces)[i];
 
+  // Update buffer pointers and size
   buffer_to_move -> traces = (void*)buffer_to_move -> traces + sizeof(uint32_t);
   buffer_to_move -> size += TRACE_SIZE;
   post_event_buffers -> end_of_last_buffer = (void*)buffer_to_move -> times + buffer_to_move -> size;
@@ -314,8 +316,8 @@ static inline bool extend_hist_trace_buffer (post_event_buffer_t *post_event_buf
 /*
 
 Scan history traces and remove traces that are older than the oldest specified time.
-The removal is done by moving the pointer to *times* structure down. After this, the
-compactor will recycled the trace that we do not point to anymore.
+The removal is done by moving the pointer to *times* structure down. This way, the
+compactor will recycle the trace that we do not point to anymore.
 
 */
 static inline scan_history_traces (post_event_buffer_t *post_event_buffers, int oldest_time) {
