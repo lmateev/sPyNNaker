@@ -24,6 +24,7 @@ from spynnaker.pyNN.models.common.abstract_spike_recordable \
     import AbstractSpikeRecordable
 from spynnaker.pyNN.models.pynn_population import Population
 from spynnaker.pyNN.models.pynn_projection import Projection
+from spynnaker.pyNN.models.pynn_assembly import Assembly
 from spynnaker.pyNN import overridden_pacman_functions
 from spynnaker.pyNN.utilities.conf import config
 from spynnaker.pyNN import model_binaries
@@ -1147,6 +1148,12 @@ class Spinnaker(object):
             machine_time_step=self._machine_time_step,
             timescale_factor=self._time_scale_factor,
             user_max_delay=self.max_supported_delay)
+
+    def create_assembly(self, populations, kwargs):
+        return Assembly(populations, kwargs)
+
+    def create_populationview(self, parent, selector, label):
+        return PopulationView(parent, selector, label)
 
     def stop(self, turn_off_machine=None, clear_routing_tables=None,
              clear_tags=None):

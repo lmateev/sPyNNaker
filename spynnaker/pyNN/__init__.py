@@ -295,6 +295,19 @@ def Projection(presynaptic_population, postsynaptic_population,
         target, synapse_dynamics, label, rng)
 
 
+# noinspection PyPep8Naming
+def Assembly(*populations, **kwargs):
+    global _spinnaker
+    return _spinnaker.create_assembly(populations, kwargs)
+
+
+# noinspection PyPep8Naming
+def PopulationView(parent, selector, label=None):
+    global _spinnaker
+    return _spinnaker.create_populationview(parent, selector, label)
+
+
+# noinspection PyPep8Naming
 def NativeRNG(seed_value):
     """ Fixes the random number generator's seed
     :param seed_value:
