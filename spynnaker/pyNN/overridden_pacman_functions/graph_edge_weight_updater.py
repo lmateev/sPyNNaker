@@ -1,7 +1,8 @@
 # pacman imports
 from spynnaker.pyNN.models.abstract_models.abstract_weight_updatable \
     import AbstractWeightUpdatable
-from pacman.utilities.utility_objs.progress_bar import ProgressBar
+
+from spinn_machine.utilities.progress_bar import ProgressBar
 
 import logging
 logger = logging.getLogger(__name__)
@@ -30,4 +31,4 @@ class GraphEdgeWeightUpdater(object):
         progress_bar.end()
 
         # return nothing
-        return {}
+        return {'subgraph': subgraph}

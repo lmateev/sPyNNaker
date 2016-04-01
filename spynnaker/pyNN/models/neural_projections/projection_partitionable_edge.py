@@ -1,7 +1,8 @@
 from pacman.model.partitionable_graph.multi_cast_partitionable_edge\
     import MultiCastPartitionableEdge
-from pacman.utilities.utility_objs.progress_bar import ProgressBar
 from pacman.utilities.utility_objs.timer import Timer
+
+from spinn_machine.utilities.progress_bar import ProgressBar
 
 from spynnaker.pyNN.utilities import conf
 from spynnaker.pyNN.models.neural_projections.projection_partitioned_edge \
@@ -9,6 +10,7 @@ from spynnaker.pyNN.models.neural_projections.projection_partitioned_edge \
 
 import logging
 import copy
+
 logger = logging.getLogger(__name__)
 
 
@@ -65,7 +67,7 @@ class ProjectionPartitionableEdge(MultiCastPartitionableEdge):
         """
         if self._stored_synaptic_data_from_machine is None:
             timer = None
-            if conf.config.getboolean("Reports", "outputTimesForSections"):
+            if conf.config.getboolean("Reports", "display_algorithm_timings"):
                 timer = Timer()
                 timer.start_timing()
 
@@ -105,7 +107,7 @@ class ProjectionPartitionableEdge(MultiCastPartitionableEdge):
                 progress_bar.update()
             progress_bar.end()
             self._stored_synaptic_data_from_machine = synaptic_list
-            if conf.config.getboolean("Reports", "outputTimesForSections"):
+            if conf.config.getboolean("Reports", "display_algorithm_timings"):
                 logger.info("Time to read matrix: {}".format(
                     timer.take_sample()))
 

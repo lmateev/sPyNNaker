@@ -1,7 +1,6 @@
 from pacman.model.constraints.partitioner_constraints.\
     partitioner_same_size_as_vertex_constraint \
     import PartitionerSameSizeAsVertexConstraint
-from pacman.utilities.utility_objs.progress_bar import ProgressBar
 from pacman.model.partitionable_graph.multi_cast_partitionable_edge \
     import MultiCastPartitionableEdge
 
@@ -20,10 +19,12 @@ from spynnaker.pyNN.models.neural_projections\
     .delay_afferent_partitionable_edge \
     import DelayAfferentPartitionableEdge
 from spynnaker.pyNN.models.neuron.connection_holder import ConnectionHolder
-from spynnaker.pyNN.models.abstract_models.abstract_mappable \
-    import AbstractMappable
+from spinn_front_end_common.abstract_models.abstract_changable_after_run \
+    import AbstractChangableAfterRun
 
 from spinn_front_end_common.utilities import exceptions
+
+from spinn_machine.utilities.progress_bar import ProgressBar
 
 
 import logging
@@ -40,7 +41,6 @@ class Projection(object):
         methods to set parameters of those connections, including of\
         plasticity mechanisms.
     """
-    _projection_count = 0
 
     # noinspection PyUnusedLocal
     def __init__(
@@ -79,7 +79,8 @@ class Projection(object):
         self._synapse_information = SynapseInformation(
             connector, synapse_dynamics_stdp, synapse_type)
         connector.set_projection_information(
-            presynaptic_population, postsynaptic_population, rng)
+            presynaptic_population, postsynaptic_population, rng,
+            machine_time_step)
 
         max_delay = synapse_dynamics_stdp.get_delay_maximum(connector)
         if max_delay is None:
@@ -87,14 +88,14 @@ class Projection(object):
 
         # check if all delays requested can fit into the natively supported
         # delays in the models
-        delay_extention_max_supported_delay = (
+        delay_extension_max_supported_delay = (
             constants.MAX_DELAY_BLOCKS *
             constants.MAX_TIMER_TICS_SUPPORTED_PER_BLOCK)
         post_vertex_max_supported_delay_ms = \
             postsynaptic_population._get_vertex.maximum_delay_supported_in_ms
 
         if max_delay > (post_vertex_max_supported_delay_ms +
-                        delay_extention_max_supported_delay):
+                        delay_extension_max_supported_delay):
             raise exceptions.ConfigurationException(
                 "The maximum delay {} for projection is not supported".format(
                     max_delay))
@@ -106,8 +107,9 @@ class Projection(object):
         # check that the projection edges label is not none, and give an
         # auto generated label if set to None
         if label is None:
-            label = "projection edge {}".format(Projection._projection_count)
-            Projection._projection_count += 1
+            label = "projection edge {}".format(
+                spinnaker_control.none_labelled_edge_count)
+            spinnaker_control.increment_none_labelled_edge_count()
 
         # Find out if there is an existing edge between the populations
         edge_to_merge = self._find_existing_edge(
@@ -127,27 +129,42 @@ class Projection(object):
                 self._synapse_information, label=label)
 
             # add edge to the graph
-            spinnaker_control.add_edge(
+            spinnaker_control.add_partitionable_edge(
                 self._projection_edge, EDGE_PARTITION_ID)
 
         # If the delay exceeds the post vertex delay, add a delay extension
         if max_delay > post_vertex_max_supported_delay_ms:
             delay_edge = self._add_delay_extension(
-                presynaptic_population, postsynaptic_population, label,
-                max_delay, post_vertex_max_supported_delay_ms,
-                machine_time_step, timescale_factor)
+                presynaptic_population, postsynaptic_population, max_delay,
+                post_vertex_max_supported_delay_ms, machine_time_step,
+                timescale_factor)
             self._projection_edge.delay_edge = delay_edge
         spinnaker_control._add_projection(self)
 
+        # If there is a virtual board, we need to hold the data in case the
+        # user asks for it
+        self._virtual_connection_list = None
+        if spinnaker_control.use_virtual_board:
+            self._virtual_connection_list = list()
+            pre_vertex = presynaptic_population._get_vertex
+            post_vertex = postsynaptic_population._get_vertex
+            connection_holder = ConnectionHolder(
+                None, False, pre_vertex.n_atoms, post_vertex.n_atoms,
+                self._virtual_connection_list)
+
+            post_vertex.add_pre_run_connection_holder(
+                connection_holder, self._projection_edge,
+                self._synapse_information)
+
     @property
     def requires_mapping(self):
-        if (isinstance(self._projection_edge, AbstractMappable) and
+        if (isinstance(self._projection_edge, AbstractChangableAfterRun) and
                 self._projection_edge.requires_mapping):
             return True
         return False
 
     def mark_no_changes(self):
-        if isinstance(self._projection_edge, AbstractMappable):
+        if isinstance(self._projection_edge, AbstractChangableAfterRun):
             self._projection_edge.mark_no_changes()
 
     def _find_existing_edge(self, presynaptic_vertex, postsynaptic_vertex):
@@ -172,7 +189,7 @@ class Projection(object):
         return None
 
     def _add_delay_extension(
-            self, presynaptic_population, postsynaptic_population, label,
+            self, presynaptic_population, postsynaptic_population,
             max_delay_for_projection, max_delay_per_neuron, machine_time_step,
             timescale_factor):
         """ Instantiate delay extension component
@@ -189,13 +206,14 @@ class Projection(object):
             presynaptic_population._internal_delay_vertex = delay_vertex
             pre_vertex.add_constraint(
                 PartitionerSameSizeAsVertexConstraint(delay_vertex))
-            self._spinnaker.add_vertex(delay_vertex)
+            self._spinnaker.add_partitionable_vertex(delay_vertex)
 
             # Add the edge
             delay_afferent_edge = DelayAfferentPartitionableEdge(
                 pre_vertex, delay_vertex, label="{}_to_DelayExtension".format(
                     pre_vertex.label))
-            self._spinnaker.add_edge(delay_afferent_edge, EDGE_PARTITION_ID)
+            self._spinnaker.add_partitionable_edge(
+                delay_afferent_edge, EDGE_PARTITION_ID)
 
         # Ensure that the delay extension knows how many states it will support
         n_stages = int(math.ceil(
@@ -211,7 +229,8 @@ class Projection(object):
             delay_edge = MultiCastPartitionableEdge(
                 delay_vertex, post_vertex, label="{}_delayed_to_{}".format(
                     pre_vertex.label, post_vertex.label))
-            self._spinnaker.add_edge(delay_edge, EDGE_PARTITION_ID)
+            self._spinnaker.add_partitionable_edge(
+                delay_edge, EDGE_PARTITION_ID)
         return delay_edge
 
     def describe(self, template='projection_default.txt', engine='default'):
@@ -244,8 +263,18 @@ class Projection(object):
         raise NotImplementedError
 
     def _get_synaptic_data(self, as_list, data_to_get):
+
         post_vertex = self._projection_edge.post_vertex
         pre_vertex = self._projection_edge.pre_vertex
+
+        # If in virtual board mode, the connection data should be set
+        if self._virtual_connection_list is not None:
+            post_vertex = self._projection_edge.post_vertex
+            pre_vertex = self._projection_edge.pre_vertex
+            return ConnectionHolder(
+                data_to_get, as_list, pre_vertex.n_atoms, post_vertex.n_atoms,
+                self._virtual_connection_list)
+
         connection_holder = ConnectionHolder(
             data_to_get, as_list, pre_vertex.n_atoms, post_vertex.n_atoms)
 
@@ -279,6 +308,7 @@ class Projection(object):
                 connection_holder.add_connections(connections)
             progress.update()
         progress.end()
+        connection_holder.finish()
         return connection_holder
 
     # noinspection PyPep8Naming

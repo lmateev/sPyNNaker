@@ -4,13 +4,10 @@ from pacman.model.constraints.placer_constraints\
     .placer_chip_and_core_constraint import PlacerChipAndCoreConstraint
 
 from spynnaker.pyNN.utilities import utility_calls
-from spynnaker.pyNN import exceptions as local_exceptions
 from spynnaker.pyNN.models.abstract_models.abstract_population_settable \
     import AbstractPopulationSettable
 from spynnaker.pyNN.models.abstract_models.abstract_population_initializable\
     import AbstractPopulationInitializable
-from spynnaker.pyNN.models.abstract_models.abstract_mappable \
-    import AbstractMappable
 from spynnaker.pyNN.models.neuron.input_types.input_type_conductance \
     import InputTypeConductance
 from spynnaker.pyNN.models.common.abstract_spike_recordable \
@@ -21,10 +18,11 @@ from spynnaker.pyNN.models.common.abstract_v_recordable \
     import AbstractVRecordable
 
 from spinn_front_end_common.utilities import exceptions
+from spinn_front_end_common.abstract_models.abstract_changable_after_run \
+    import AbstractChangableAfterRun
 
 import numpy
 import logging
-import copy
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +45,6 @@ class Population(object):
     :returns a list of vertexes and edges
     """
 
-    _non_labelled_vertex_count = 0
-
     def __init__(self, size, cellclass, cellparams, spinnaker, label,
                  structure=None):
         if size is not None and size <= 0:
@@ -60,21 +56,21 @@ class Population(object):
         cell_label = label
         if label is None:
             cell_label = "Population {}".format(
-                Population._non_labelled_vertex_count)
-            Population._non_labelled_vertex_count += 1
+                spinnaker.none_labelled_vertex_count)
+            spinnaker.increment_none_labelled_vertex_count()
 
         # copy the parameters so that the end users are not exposed to the
         # additions placed by spinnaker.
-        cellparams = copy.deepcopy(cellparams)
+        internal_cellparams = dict(cellparams)
 
         # set spinnaker targeted parameters
-        cellparams['label'] = cell_label
-        cellparams['n_neurons'] = size
-        cellparams['machine_time_step'] = spinnaker.machine_time_step
-        cellparams['timescale_factor'] = spinnaker.timescale_factor
+        internal_cellparams['label'] = cell_label
+        internal_cellparams['n_neurons'] = size
+        internal_cellparams['machine_time_step'] = spinnaker.machine_time_step
+        internal_cellparams['timescale_factor'] = spinnaker.timescale_factor
 
         # create population vertex.
-        self._vertex = cellclass(**cellparams)
+        self._vertex = cellclass(**internal_cellparams)
         self._spinnaker = spinnaker
         self._delay_vertex = None
 
@@ -88,7 +84,7 @@ class Population(object):
             self._structure = None
 
         self._spinnaker._add_population(self)
-        self._spinnaker.add_vertex(self._vertex)
+        self._spinnaker.add_partitionable_vertex(self._vertex)
 
         # initialise common stuff
         self._size = size
@@ -101,13 +97,13 @@ class Population(object):
 
     @property
     def requires_mapping(self):
-        if isinstance(self._vertex, AbstractMappable):
+        if isinstance(self._vertex, AbstractChangableAfterRun):
             return self._vertex.requires_mapping
         return self._change_requires_mapping
 
     def mark_no_changes(self):
         self._change_requires_mapping = False
-        if isinstance(self._vertex, AbstractMappable):
+        if isinstance(self._vertex, AbstractChangableAfterRun):
             self._vertex.mark_no_changes()
 
     def __add__(self, other):
@@ -179,9 +175,16 @@ class Population(object):
                 "This population has not got the capability to record spikes")
 
         if not self._spinnaker.has_ran:
-            raise local_exceptions.SpynnakerException(
+            logger.warn(
                 "The simulation has not yet run, therefore spikes cannot"
-                " be retrieved")
+                " be retrieved, hence the list will be empty")
+            return numpy.zeros((0, 2))
+
+        if self._spinnaker.use_virtual_board:
+            logger.warn(
+                "The simulation is using a virtual machine and so has not"
+                " truly ran, hence the list will be empty")
+            return numpy.zeros((0, 2))
 
         spikes = self._vertex.get_spikes(
             self._spinnaker.placements, self._spinnaker.graph_mapper,
@@ -222,11 +225,17 @@ class Population(object):
                 "This population has not got the capability to record gsyn")
 
         if not self._spinnaker.has_ran:
-            raise local_exceptions.SpynnakerException(
+            logger.warn(
                 "The simulation has not yet run, therefore gsyn cannot"
-                " be retrieved")
+                " be retrieved, hence the list will be empty")
+            return numpy.zeros((0, 4))
 
-        # check that the vertex has read up to the position it needs to
+        if self._spinnaker.use_virtual_board:
+            logger.warn(
+                "The simulation is using a virtual machine and so has not"
+                " truly ran, hence the list will be empty")
+            return numpy.zeros((0, 4))
+
         return self._vertex.get_gsyn(
             self._spinnaker.no_machine_time_steps, self._spinnaker.placements,
             self._spinnaker.graph_mapper, self._spinnaker.buffer_manager)
@@ -253,11 +262,17 @@ class Population(object):
                 "This population has not got the capability to record v")
 
         if not self._spinnaker.has_ran:
-            raise local_exceptions.SpynnakerException(
+            logger.warn(
                 "The simulation has not yet run, therefore v cannot"
-                " be retrieved")
+                " be retrieved, hence the list will be empty")
+            return numpy.zeros((0, 3))
 
-        # check that the vertex has read up to the position it needs to
+        if self._spinnaker.use_virtual_board:
+            logger.warn(
+                "The simulation is using a virtual machine and so has not"
+                " truly ran, hence the list will be empty")
+            return numpy.zeros((0, 3))
+
         return self._vertex.get_v(
             self._spinnaker.no_machine_time_steps, self._spinnaker.placements,
             self._spinnaker.graph_mapper, self._spinnaker.buffer_manager)

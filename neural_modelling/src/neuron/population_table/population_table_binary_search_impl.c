@@ -23,8 +23,8 @@ static uint16_t items_to_go = 0;
 
 static inline uint32_t _get_address(address_and_row_length entry) {
 
-    // The address is in words and is the top 24-bits, so this downshifts by
-    // 8 and then multiplies by 4 (= upshifts by 2) = downshift by 6
+    // The address is in words and is the top 24-bits, so this down shifts by
+    // 8 and then multiplies by 4 (= up shifts by 2) = down shift by 6
     return entry >> 6;
 }
 
@@ -59,24 +59,35 @@ bool population_table_initialise(address_t table_address,
     log_info("population_table_initialise: starting");
 
     master_population_table_length = table_address[0];
+    log_info("master pop table length is %d\n", master_population_table_length);
+    log_info("master pop table entry size is %d\n", sizeof(master_population_table_entry));
     uint32_t n_master_pop_bytes =
         master_population_table_length * sizeof(master_population_table_entry);
     uint32_t n_master_pop_words = n_master_pop_bytes >> 2;
-    master_population_table = (master_population_table_entry *)
-        spin1_malloc(n_master_pop_bytes);
-    if (master_population_table == NULL) {
-        log_error("Could not allocate master population table");
-        return false;
+    log_info("pop table size is %d\n", n_master_pop_bytes);
+
+    // only try to malloc if there's stuff to malloc.
+    if (n_master_pop_bytes != 0){
+        master_population_table = (master_population_table_entry *)
+            spin1_malloc(n_master_pop_bytes);
+        if (master_population_table == NULL) {
+            log_error("Could not allocate master population table");
+            return false;
+        }
     }
 
     uint32_t address_list_length = table_address[1];
     uint32_t n_address_list_bytes =
         address_list_length * sizeof(address_and_row_length);
-    address_list = (address_and_row_length *)
-        spin1_malloc(n_address_list_bytes);
-    if (address_list == NULL) {
-        log_error("Could not allocate master population address list");
-        return false;
+
+    // only try to malloc if there's stuff to malloc.
+    if (n_address_list_bytes != 0){
+        address_list = (address_and_row_length *)
+            spin1_malloc(n_address_list_bytes);
+        if (address_list == NULL) {
+            log_error("Could not allocate master population address list");
+            return false;
+        }
     }
 
     log_info(

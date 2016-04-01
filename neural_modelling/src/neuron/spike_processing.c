@@ -71,7 +71,7 @@ static inline void _do_dma_read(
 
 static inline void _setup_synaptic_dma_read() {
 
-    // Set up to store the dma location and size to read
+    // Set up to store the DMA location and size to read
     address_t row_address;
     size_t n_bytes_to_transfer;
 
@@ -230,6 +230,8 @@ bool spike_processing_initialise(
             log_error("Could not initialise DMA buffers");
             return false;
         }
+        log_info(
+            "DMA buffer %u allocated at 0x%08x", (uint32_t) dma_buffers[i].row);
     }
     dma_busy = false;
     next_buffer_to_fill = 0;
@@ -255,12 +257,10 @@ void spike_processing_finish_write(uint32_t process_id) {
     _setup_synaptic_dma_write(process_id);
 }
 
-void spike_processing_print_buffer_overflows() {
+//! \brief returns the number of times the input buffer has overflowed
+//! \return the number of times the input buffer has overloaded
+uint32_t spike_processing_get_buffer_overflows() {
 
     // Check for buffer overflow
-    uint32_t spike_buffer_overflows = in_spikes_get_n_buffer_overflows();
-    if (spike_buffer_overflows > 0) {
-        io_printf(IO_BUF, "\tWarning - %u spike buffers overflowed\n",
-                  spike_buffer_overflows);
-    }
+    return in_spikes_get_n_buffer_overflows();
 }
