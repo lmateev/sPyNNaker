@@ -63,7 +63,8 @@ uint32_t input_size;
 //! readable form
 typedef enum parmeters_in_neuron_parameter_data_region {
     HAS_KEY, TRANSMISSION_KEY, N_NEURONS_TO_SIMULATE,
-    INCOMING_SPIKE_BUFFER_SIZE, START_OF_GLOBAL_PARAMETERS,
+    INCOMING_SPIKE_BUFFER_SIZE, INCOMING_SPIKE_WITH_DATA_BUFFER_SIZE,
+    START_OF_GLOBAL_PARAMETERS,
 } parmeters_in_neuron_parameter_data_region;
 
 
@@ -105,7 +106,8 @@ static inline void _print_neuron_parameters() {
 //! \param[out] n_neurons_value The number of neurons this model is to emulate
 //! \return True is the initialisation was successful, otherwise False
 bool neuron_initialise(address_t address, uint32_t recording_flags_param,
-        uint32_t *n_neurons_value, uint32_t *incoming_spike_buffer_size) {
+        uint32_t *n_neurons_value, uint32_t *incoming_spike_buffer_size,
+        uint32_t *incoming_spike_with_data_buffer_size) {
     log_info("neuron_initialise: starting");
 
     // Check if there is a key to use
@@ -128,6 +130,8 @@ bool neuron_initialise(address_t address, uint32_t recording_flags_param,
 
     // Read the size of the incoming spike buffer to use
     *incoming_spike_buffer_size = address[INCOMING_SPIKE_BUFFER_SIZE];
+    *incoming_spike_with_data_buffer_size =
+        address[INCOMING_SPIKE_WITH_DATA_BUFFER_SIZE];
 
     uint32_t next = START_OF_GLOBAL_PARAMETERS;
 

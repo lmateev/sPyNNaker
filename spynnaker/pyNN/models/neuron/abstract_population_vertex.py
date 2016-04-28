@@ -82,7 +82,8 @@ class AbstractPopulationVertex(
     def __init__(
             self, n_neurons, binary, label, max_atoms_per_core,
             machine_time_step, timescale_factor, spikes_per_second,
-            ring_buffer_sigma, incoming_spike_buffer_size, model_name,
+            ring_buffer_sigma, incoming_spike_buffer_size,
+            incoming_spike_with_data_buffer_size, model_name,
             neuron_model, input_type, synapse_type, threshold_type,
             additional_input=None, constraints=None):
 
@@ -107,6 +108,11 @@ class AbstractPopulationVertex(
         if incoming_spike_buffer_size is None:
             self._incoming_spike_buffer_size = config.getint(
                 "Simulation", "incoming_spike_buffer_size")
+        self._incoming_spike_with_data_buffer_size = \
+            incoming_spike_with_data_buffer_size
+        if incoming_spike_with_data_buffer_size is None:
+            self._incoming_spike_with_data_buffer_size = config.getint(
+                "Simulation", "incoming_spike_with_data_buffer_size")
 
         self._model_name = model_name
         self._neuron_model = neuron_model
@@ -379,6 +385,7 @@ class AbstractPopulationVertex(
 
         # Write the size of the incoming spike buffer
         spec.write_value(data=self._incoming_spike_buffer_size)
+        spec.write_value(data=self._incoming_spike_with_data_buffer_size)
 
         # Write the global parameters
         global_params = self._neuron_model.get_global_parameters()

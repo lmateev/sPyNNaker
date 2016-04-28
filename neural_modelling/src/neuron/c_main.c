@@ -133,9 +133,11 @@ static bool initialise(uint32_t *timer_period) {
     // Set up the neurons
     uint32_t n_neurons;
     uint32_t incoming_spike_buffer_size;
+    uint32_t incoming_spike_with_data_buffer_size;
     if (!neuron_initialise(
             data_specification_get_region(NEURON_PARAMS_REGION, address),
-            recording_flags, &n_neurons, &incoming_spike_buffer_size)) {
+            recording_flags, &n_neurons, &incoming_spike_buffer_size,
+            &incoming_spike_with_data_buffer_size)) {
         return false;
     }
 
@@ -168,7 +170,7 @@ static bool initialise(uint32_t *timer_period) {
 
     if (!spike_processing_initialise(
             row_max_n_words, MC, SDP_AND_DMA_AND_USER, SDP_AND_DMA_AND_USER,
-            incoming_spike_buffer_size)) {
+            incoming_spike_buffer_size, incoming_spike_with_data_buffer_size)) {
         return false;
     }
     log_info("Initialise: finished");

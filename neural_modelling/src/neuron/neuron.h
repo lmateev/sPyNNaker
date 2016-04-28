@@ -28,11 +28,14 @@
 //! \param[out] n_neurons_value The number of neurons this model is to emulate
 //! \param[out] incoming_spike_buffer_size The number of spikes to support in
 //!             the incoming spike buffer
+//! \param[out] incoming_spike_with_data_buffer_size The number of spikes with
+//              data to support in the incoming spike with data buffer
 //! \return boolean which is True is the translation was successful
 //!         otherwise False
 bool neuron_initialise(
     address_t address, uint32_t recording_flags, uint32_t *n_neurons_value,
-    uint32_t *incoming_spike_buffer_size);
+    uint32_t *incoming_spike_buffer_size,
+    uint32_t *incoming_spike_with_data_buffer_size);
 
 //! \setter for the internal input buffers
 //! \param[in] input_buffers_value the new input buffers
