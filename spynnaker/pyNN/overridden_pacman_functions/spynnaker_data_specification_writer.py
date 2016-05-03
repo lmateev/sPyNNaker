@@ -8,6 +8,8 @@ from spinn_front_end_common.utilities.utility_objs.executable_targets \
 
 from spynnaker.pyNN.models.utility_models.delay_extension_vertex \
     import DelayExtensionVertex
+from spynnaker.pyNN.models.spike_source.spike_source_poisson \
+    import SpikeSourcePoisson
 
 
 class SpynnakerDataSpecificationWriter(
@@ -25,8 +27,8 @@ class SpynnakerDataSpecificationWriter(
         executable_targets = ExecutableTargets()
         dsg_targets = dict()
 
-        # Keep delay extensions until the end
-        delay_extension_placements = list()
+        # Keep delay extensions and Poisson sources until the end
+        post_neuron_placements = list()
 
         # create a progress bar for end users
         progress_bar = ProgressBar(len(list(placements.placements)),
@@ -35,8 +37,9 @@ class SpynnakerDataSpecificationWriter(
             associated_vertex = graph_mapper.get_vertex_from_subvertex(
                 placement.subvertex)
 
-            if isinstance(associated_vertex, DelayExtensionVertex):
-                delay_extension_placements.append(
+            if (isinstance(associated_vertex, DelayExtensionVertex) or
+                    isinstance(associated_vertex, SpikeSourcePoisson)):
+                post_neuron_placements.append(
                     (placement, associated_vertex))
             else:
                 self._generate_data_spec_for_subvertices(
@@ -47,7 +50,7 @@ class SpynnakerDataSpecificationWriter(
                     app_data_runtime_folder)
                 progress_bar.update()
 
-        for placement, associated_vertex in delay_extension_placements:
+        for placement, associated_vertex in post_neuron_placements:
             self._generate_data_spec_for_subvertices(
                 placement, associated_vertex, executable_targets,
                 dsg_targets, graph_mapper, tags, executable_finder,

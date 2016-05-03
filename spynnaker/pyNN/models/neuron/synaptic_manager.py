@@ -610,6 +610,9 @@ class SynapticManager(object):
                             connection_holder.finish()
 
                     if len(row_data) > 0:
+                        if isinstance(edge.pre_vertex, SpikeSourcePoisson):
+                            edge.pre_vertex.set_single_synapse_data(
+                                pre_vertex_slice.lo_atom, row_data, row_length)
                         next_block_start_address = self._write_padding(
                             spec, synaptic_matrix_region,
                             next_block_start_address)

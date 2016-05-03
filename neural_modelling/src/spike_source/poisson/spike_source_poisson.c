@@ -26,6 +26,9 @@ typedef struct slow_spike_source_t {
 
     REAL mean_isi_ticks;
     REAL time_to_spike_ticks;
+
+    uint32_t has_payload;
+    uint32_t payload;
 } slow_spike_source_t;
 
 //! data structure for spikes which have at least one spike fired per timer
@@ -36,6 +39,9 @@ typedef struct fast_spike_source_t {
     uint32_t start_ticks;
     uint32_t end_ticks;
     UFRACT exp_minus_lambda;
+
+    uint32_t has_payload;
+    uint32_t payload;
 } fast_spike_source_t;
 
 //! spike source array region ids in human readable form
@@ -352,14 +358,28 @@ void timer_callback(uint timer_count, uint unused) {
                 // if no key has been given, do not send spike to fabric.
                 if (has_been_given_key) {
 
-                    // Send package
-                    while (!spin1_send_mc_packet(
-                            key | slow_spike_source->neuron_id, 0,
-                            NO_PAYLOAD)) {
-                        spin1_delay_us(1);
-                    }
+                    uint32_t key_to_send =  key | slow_spike_source->neuron_id;
+
                     log_debug("Sending spike packet %x at %d\n",
-                        key | slow_spike_source->neuron_id, time);
+                        key_to_send, time);
+
+                    if (slow_spike_source->has_payload) {
+
+                        // Send package with payload
+                        while (!spin1_send_mc_packet(
+                                key_to_send, slow_spike_source->payload,
+                                WITH_PAYLOAD)) {
+                            spin1_delay_us(1);
+                        }
+
+                    } else {
+
+                        // Send package
+                        while (!spin1_send_mc_packet(
+                                key_to_send, 0, NO_PAYLOAD)) {
+                            spin1_delay_us(1);
+                        }
+                    }
                 }
 
                 // Update time to spike
@@ -400,9 +420,18 @@ void timer_callback(uint timer_count, uint unused) {
                     if (has_been_given_key){
                         log_debug("Sending spike packet %x at %d\n",
                                   spike_key, time);
-                        while (!spin1_send_mc_packet(spike_key, 0,
-                                                     NO_PAYLOAD)) {
-                            spin1_delay_us(1);
+
+                        if (fast_spike_source->has_payload) {
+                            while (!spin1_send_mc_packet(
+                                    spike_key, fast_spike_source->payload,
+                                    WITH_PAYLOAD)) {
+                                spin1_delay_us(1);
+                            }
+                        } else {
+                            while (!spin1_send_mc_packet(
+                                    spike_key, 0, NO_PAYLOAD)) {
+                                spin1_delay_us(1);
+                            }
                         }
                     }
                 }

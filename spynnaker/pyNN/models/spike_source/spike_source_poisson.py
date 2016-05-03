@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 
 SLOW_RATE_PER_TICK_CUTOFF = 1.0
 PARAMS_BASE_WORDS = 6
-PARAMS_WORDS_PER_NEURON = 5
+PARAMS_WORDS_PER_NEURON = 7
 RANDOM_SEED_WORDS = 4
 
 
@@ -112,6 +112,19 @@ class SpikeSourcePoisson(
             "Buffers", "minimum_buffer_sdram")
         self._using_auto_pause_and_resume = config.getboolean(
             "Buffers", "use_auto_pause_and_resume")
+
+        self._single_synapses = dict()
+
+    def add_single_synapse(self, source_index, synaptic_word):
+        self._single_synapses[source_index] = synaptic_word
+
+    def set_single_synapse_data(self, lo_atom, row_data, max_length):
+        atom_id = lo_atom
+        rows = row_data.reshape((-1, max_length + 3))
+        for row in rows:
+            if row[0] == 0 and row[1] == 1:
+                self._single_synapses[atom_id] = row[3]
+            atom_id += 1
 
     def create_subvertex(
             self, vertex_slice, resources_required, label=None,
@@ -297,13 +310,22 @@ class SpikeSourcePoisson(
                 end_val = generate_parameter(
                     self._duration, atom_id) + start_val
 
+            has_payload = 0
+            payload = 0
+            if atom_id in self._single_synapses:
+                has_payload = 1
+                payload = self._single_synapses[atom_id]
+
             # Decide if it is a fast or slow source and
             spikes_per_tick = \
                 (float(rate_val) * (self._machine_time_step / 1000000.0))
             if spikes_per_tick <= SLOW_RATE_PER_TICK_CUTOFF:
-                slow_sources.append([i, rate_val, start_val, end_val])
+                slow_sources.append([
+                    i, rate_val, start_val, end_val, has_payload, payload])
             else:
-                fast_sources.append([i, spikes_per_tick, start_val, end_val])
+                fast_sources.append([
+                    i, spikes_per_tick, start_val, end_val, has_payload,
+                    payload])
 
         # Write the numbers of each type of source
         spec.write_value(data=len(slow_sources))
@@ -320,7 +342,8 @@ class SpikeSourcePoisson(
         #     accum mean_isi_ticks;
         #     accum time_to_spike_ticks;
         #   } slow_spike_source_t;
-        for (neuron_id, rate_val, start_val, end_val) in slow_sources:
+        for (neuron_id, rate_val, start_val, end_val,
+                has_payload, payload) in slow_sources:
             if rate_val == 0:
                 isi_val = 0
             else:
@@ -335,6 +358,8 @@ class SpikeSourcePoisson(
             spec.write_value(data=end_scaled, data_type=DataType.UINT32)
             spec.write_value(data=isi_val, data_type=DataType.S1615)
             spec.write_value(data=0x0, data_type=DataType.UINT32)
+            spec.write_value(data=has_payload, data_type=DataType.UINT32)
+            spec.write_value(data=payload, data_type=DataType.UINT32)
 
         # Now write
         #   typedef struct fast_spike_source_t
@@ -345,7 +370,8 @@ class SpikeSourcePoisson(
         #
         #     unsigned long fract exp_minus_lambda;
         #   } fast_spike_source_t;
-        for (neuron_id, spikes_per_tick, start_val, end_val) in fast_sources:
+        for (neuron_id, spikes_per_tick, start_val, end_val,
+                has_payload, payload) in fast_sources:
             if spikes_per_tick == 0:
                 exp_minus_lamda = 0
             else:
@@ -358,6 +384,8 @@ class SpikeSourcePoisson(
             spec.write_value(data=start_scaled, data_type=DataType.UINT32)
             spec.write_value(data=end_scaled, data_type=DataType.UINT32)
             spec.write_value(data=exp_minus_lamda, data_type=DataType.U032)
+            spec.write_value(data=has_payload, data_type=DataType.UINT32)
+            spec.write_value(data=payload, data_type=DataType.UINT32)
 
     # @implements AbstractSpikeRecordable.is_recording_spikes
     def is_recording_spikes(self):
