@@ -351,6 +351,10 @@ void timer2_callback(uint timer_count, uint unused) {
     // If this is an accident, skip it
     if (!timer_running) {
         n_timer2_reent += 1;
+
+        // Subtract 1 from the time so this tick gets done again on the next
+        // run
+        time -= 1;
         return;
     }
 

@@ -138,10 +138,29 @@ class Spinnaker(SpinnakerMainInterface):
             self._time_scale_factor = \
                 config.getint("Machine", "timeScaleFactor")
             if timestep * self._time_scale_factor < 1000:
-                logger.warn("the combination of machine time step and the "
-                            "machine time scale factor results in a real "
-                            "timer tick that is currently not reliably "
-                            "supported by the spinnaker machine.")
+                if config.getboolean(
+                        "Mode", "violate_1ms_wall_clock_restriction"):
+                    logger.warn(
+                        "****************************************************")
+                    logger.warn(
+                        "*** The combination of simulation time step and  ***")
+                    logger.warn(
+                        "*** the machine time scale factor results in a   ***")
+                    logger.warn(
+                        "*** wall clock timer tick that is currently not  ***")
+                    logger.warn(
+                        "*** reliably supported by the spinnaker machine. ***")
+                    logger.warn(
+                        "****************************************************")
+                else:
+                    raise common_exceptions.ConfigurationException(
+                        "The combination of simulation time step and the"
+                        " machine time scale factor results in a wall clock "
+                        "timer tick that is currently not reliably supported "
+                        "by the spinnaker machine.  If you would like to "
+                        "override this behaviour (at your own risk), please "
+                        "add violate_1ms_wall_clock_restriction = True to the "
+                        "[Mode] section of your .spynnaker.cfg file")
         else:
             self._time_scale_factor = max(1,
                                           math.ceil(1000.0 / float(timestep)))
@@ -267,7 +286,8 @@ class Spinnaker(SpinnakerMainInterface):
             user_max_delay=self.max_supported_delay)
 
     def stop(self, turn_off_machine=None, clear_routing_tables=None,
-             clear_tags=None):
+             clear_tags=None, extract_provenance_data=True,
+             extract_iobuf=True):
         """
         :param turn_off_machine: decides if the machine should be powered down\
             after running the execution. Note that this powers down all boards\
@@ -279,13 +299,20 @@ class Spinnaker(SpinnakerMainInterface):
         :param clear_tags: informs the tool chain if it should clear the tags\
             off the machine at stop
         :type clear_tags: boolean
+        :param extract_provenance_data: informs the tools if it should \
+            try to extract provenance data.
+        :type extract_provenance_data: bool
+        :param extract_iobuf: tells the tools if it should try to \
+            extract iobuf
+        :type extract_iobuf: bool
         :return: None
         """
         for population in self._populations:
             population._end()
 
         SpinnakerMainInterface.stop(
-            self, turn_off_machine, clear_routing_tables, clear_tags)
+            self, turn_off_machine, clear_routing_tables, clear_tags,
+            extract_provenance_data, extract_iobuf)
 
     def run(self, run_time):
         """ Run the model created
@@ -294,7 +321,5 @@ class Spinnaker(SpinnakerMainInterface):
         """
 
         # extra post run algorithms
-        if self._has_ran:
-            self._extra_pre_run_algorithms = ["SpyNNakerRecordingExtractor"]
         self._dsg_algorithm = "SpynnakerDataSpecificationWriter"
         SpinnakerMainInterface.run(self, run_time)
